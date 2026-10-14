@@ -7,6 +7,7 @@
   <a class="stat" href="{{ url_for('admin.queue') }}"><b>{{ counts.get('weryfikacja', 0) }}</b>do weryfikacji</a>
   <div class="stat"><b>{{ counts.get('ok', 0) }}</b>ze składem</div>
   <div class="stat"><b>{{ counts.get('oczekuje', 0) }}</b>czeka na ChPL</div>
+  <div class="stat"><b>{{ counts.get('brak_chpl', 0) }}</b>bez ChPL w rejestrze</div>
 </div>
 
 <h2>Najczęstsze nieznane nazwy</h2>

@@ -1,6 +1,7 @@
 {% macro status_badge(p) -%}
   {%- if p.status == 'ok' -%}<span class="badge ok">skład ustalony</span>
   {%- elif p.status == 'weryfikacja' -%}<span class="badge weryfikacja">w trakcie weryfikacji</span>
+  {%- elif p.status == 'brak_chpl' -%}<span class="badge oczekuje" title="rejestr nie udostępnia ChPL tego leku">brak ChPL w rejestrze</span>
   {%- else -%}<span class="badge oczekuje">oczekuje na ChPL</span>{%- endif -%}
   {%- if p.manual %} <span class="badge manual">wpisany ręcznie</span>{% endif -%}
 {%- endmacro %}

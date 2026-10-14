@@ -31,3 +31,9 @@ def test_brackets_and_ions():
 def test_unparseable_power_falls_back_to_raw():
     assert group_key("Oleum iodisatum", "480 mg I/ml") == group_key("Oleum iodisatum", "480 mg I/ml")
     assert group_key(None, "400 mg") is None
+
+
+def test_no_group_without_specific_substance_or_power():
+    assert group_key("Produkt złożony", "-") is None
+    assert group_key("Homeopatyczny produkt leczniczy", "2 CH, 4CH") is None
+    assert group_key("Ibuprofenum", "-") is None

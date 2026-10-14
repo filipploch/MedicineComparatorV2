@@ -7,7 +7,11 @@
   <p>{{ p.form }} · {{ p.holder }}{% if not p.active %} · <strong>usunięty z rejestru</strong>{% endif %}</p>
   <p class="muted">Substancje czynne: {{ p.common_name }}{% if p.atc %} · ATC {{ p.atc }}{% endif %}
     · nr pozwolenia {{ p.registry_number }}</p>
-  {% if p.gtins %}<p class="muted">GTIN opakowań: {{ p.gtins|map(attribute='code')|join(', ') }}</p>{% endif %}
+  {% if p.gtins %}
+  <details><summary class="muted">Opakowania ({{ p.gtins|length }})</summary>
+    <ul class="muted">{% for g in p.gtins %}<li>{{ g.code }}{% if g.package %} · {{ g.package }}{% endif %}{% if g.deleted %} · skasowane z rejestru{% endif %}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
   {% if current_user.is_authenticated %}<p><a href="{{ url_for('admin.product', product_id=p.id) }}">Edytuj skład w panelu</a></p>{% endif %}
 </div>
 
@@ -18,6 +22,12 @@
   {% else %}
     <p>Według ChPL lek nie zawiera substancji pomocniczych.</p>
   {% endif %}
+{% elif p.status == 'brak_chpl' %}
+  <p class="notice">Rejestr nie udostępnia Charakterystyki Produktu Leczniczego tego leku
+    {%- if p.procedure == 'CEN' %} (lek dopuszczony do obrotu przez Europejską Agencję Leków){% elif p.procedure == 'IR' %} (lek z importu równoległego){% endif %}.
+    Substancje pomocnicze sprawdź w ulotce, w punkcie 6.
+    {% if p.leaflet_url %}<a href="{{ p.leaflet_url }}" rel="noopener">Otwórz ulotkę (PDF)</a>
+    {%- elif p.procedure == 'CEN' %}Ulotkę i charakterystykę tego leku publikuje Europejska Agencja Leków (ema.europa.eu).{% endif %}</p>
 {% else %}
   <p class="notice">Skład w trakcie weryfikacji. Do tego czasu sprawdź punkt 6.1 w ChPL.</p>
 {% endif %}

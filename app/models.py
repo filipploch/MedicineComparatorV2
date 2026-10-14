@@ -14,6 +14,7 @@ def now() -> datetime:
 PENDING = "oczekuje"            # ChPL jeszcze nie przetworzony
 OK = "ok"                       # skład ustalony (z parsera albo wpisany przez redaktora)
 REVIEW = "weryfikacja"          # wymaga ingerencji redaktora
+NO_CHPL = "brak_chpl"           # rejestr nie udostępnia ChPL (leki dopuszczone przez EMA, import równoległy)
 
 product_excipient = db.Table(
     "product_excipient",
@@ -24,7 +25,8 @@ product_excipient = db.Table(
 
 class Product(db.Model):
     """Rekord z Rejestru Produktów Leczniczych (jedna moc = jeden rekord)."""
-    id = db.Column(db.Integer, primary_key=True)                  # id w RPL
+    id = db.Column(db.Integer, primary_key=True)                  # "Identyfikator Produktu Leczniczego" z CSV
+    rpl_id = db.Column(db.Integer, index=True)                    # id w adresach API (np. .../11104/characteristic)
     name = db.Column(db.String(300), nullable=False, index=True)
     common_name = db.Column(db.String(500))                       # substancje czynne (łac.)
     power = db.Column(db.String(200))                             # moc jak w RPL
@@ -32,6 +34,9 @@ class Product(db.Model):
     holder = db.Column(db.String(300))
     registry_number = db.Column(db.String(50))
     atc = db.Column(db.String(20))
+    procedure = db.Column(db.String(10))                          # NAR, DCP, MRP, CEN (EMA), IR (import równoległy)
+    chpl_url = db.Column(db.String(300))                          # brak = rejestr nie udostępnia ChPL
+    leaflet_url = db.Column(db.String(300))
     group_key = db.Column(db.String(600), index=True)             # klucz odpowiedników
     active = db.Column(db.Boolean, default=True, nullable=False)  # znika z RPL -> False
 
@@ -60,6 +65,8 @@ class Gtin(db.Model):
     """Kod GTIN opakowania (14 cyfr; EAN-13 z pudełka jest dopełniany zerem z przodu)."""
     code = db.Column(db.String(14), primary_key=True)
     product_id = db.Column(db.ForeignKey("product.id", ondelete="CASCADE"), nullable=False, index=True)
+    package = db.Column(db.String(200))                   # opis opakowania, np. "20 tabl."
+    deleted = db.Column(db.Boolean, default=False)        # opakowanie skasowane w rejestrze (może jeszcze być w aptece)
     product = db.relationship("Product", back_populates="gtins")
 
 

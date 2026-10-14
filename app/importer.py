@@ -1,4 +1,8 @@
-"""Cotygodniowy import: rejestr leków z API RPL + punkt 6.1 z ChPL.
+"""Cotygodniowy import: rejestr leków z pliku CSV RPL + punkt 6.1 z ChPL.
+
+Rejestr: jeden plik CSV z rejestry.ezdrowie.gov.pl (ok. 16 MB) zawiera wszystkie leki z mocą, postacią,
+kodami GTIN opakowań i linkami do ChPL i ulotki. Leki dopuszczone centralnie (EMA) i z importu
+równoległego nie mają w rejestrze ChPL; dostają status "brak ChPL" zamiast trafiać do kolejki redaktora.
 
 Wykrywanie zmian ChPL (rozwinięcie pomysłu ze starego repo, które porównywało Content-Length):
   1. zapytanie HEAD -> "podpis" z nazwy pliku (Content-Disposition), rozmiaru, ETag i Last-Modified;
@@ -7,12 +11,14 @@ Wykrywanie zmian ChPL (rozwinięcie pomysłu ze starego repo, które porównywa�
 """
 from __future__ import annotations
 
+import csv
 import hashlib
-import json
+import io
 import logging
 import re
 import time
 import traceback
+from pathlib import Path
 from typing import Callable, Iterator
 
 import requests
@@ -22,12 +28,29 @@ from . import db
 from .chpl_parser import (NO_SECTION_END, REASON_LABELS, Result, Tables, parse_pdf,
                           parse_section, skladniki_dla_mocy)
 from .codes import gtin_check_ok, to_gtin14
-from .models import (OK, PENDING, REVIEW, ChplDocument, ENumber, Excipient, Gtin, IgnoredLabel,
-                     ImportRun, Premix, Product, Synonym, now)
+from .models import (NO_CHPL, OK, PENDING, REVIEW, ChplDocument, ENumber, Excipient, Gtin,
+                     IgnoredLabel, ImportRun, Premix, Product, Synonym, now)
 from .power import group_key
 
 log = logging.getLogger(__name__)
 USER_AGENT = "porownywarka-substancji-pomocniczych/1.0 (import cotygodniowy)"
+
+# Kolumny pliku CSV RPL
+COL_ID = "Identyfikator Produktu Leczniczego"
+COL_NAME = "Nazwa Produktu Leczniczego"
+COL_COMMON = "Nazwa powszechnie stosowana"
+COL_KIND = "Rodzaj preparatu"
+COL_POWER = "Moc"
+COL_FORM = "Postać farmaceutyczna"
+COL_PROCEDURE = "Typ procedury"
+COL_REG_NO = "Numer pozwolenia"
+COL_ATC = "Kod ATC"
+COL_HOLDER = "Podmiot odpowiedzialny"
+COL_PACKAGES = "Opakowanie"
+COL_CHPL = "Charakterystyka"
+LEAFLET_COLS = ("Ulotka", "Etykieto-ulotka", "Ulotka importu równoległego", "Etykieto-ulotka importu równoległego")
+RE_RPL_ID = re.compile(r"/medicinal-products/(\d+)/")
+RE_PACKAGE = re.compile(r"^\s*(\d{8,14})\s*¦(.*)$")
 
 
 # --- słowniki z bazy -------------------------------------------------------------
@@ -68,17 +91,19 @@ class Client:
 
     def get(self, url: str, **kw) -> requests.Response:
         self._wait()
-        return self.http.get(url, timeout=60, **kw)
+        return self.http.get(url, timeout=120, **kw)
 
     def head(self, url: str) -> requests.Response:
         self._wait()
         return self.http.head(url, timeout=30, allow_redirects=True)
 
 
+RE_FILENAME = re.compile(r"filename\*?=(?:UTF-8'')?\"?([^\";]+)", re.I)
+
+
 def signature(headers) -> str | None:
     """Podpis pliku z nagłówków HTTP; None, gdy serwer nic użytecznego nie podaje."""
-    disposition = headers.get("Content-Disposition", "")
-    m = re.search(r"filename\*?=(?:UTF-8'')?\"?([^\";]+)", disposition, re.I)
+    m = RE_FILENAME.search(headers.get("Content-Disposition", ""))
     parts = [m.group(1) if m else "", headers.get("ETag", ""), headers.get("Last-Modified", "")]
     if not any(parts):
         return None
@@ -86,80 +111,106 @@ def signature(headers) -> str | None:
 
 
 def file_name(headers) -> str | None:
-    m = re.search(r"filename\*?=(?:UTF-8'')?\"?([^\";]+)", headers.get("Content-Disposition", ""), re.I)
+    m = RE_FILENAME.search(headers.get("Content-Disposition", ""))
     return m.group(1) if m else None
 
 
-# --- rejestr --------------------------------------------------------------------------
-def fetch_registry(client: Client, limit: int | None = None) -> Iterator[dict]:
-    cfg = current_app.config
-    page, seen = 0, 0
-    while True:
-        params = {"page": page, "size": cfg["RPL_PAGE_SIZE"], "specimenTypeEnum": "L", "isAdvancedSearch": "false"}
-        r = client.get(cfg["RPL_SEARCH_URL"], params=params)
-        r.raise_for_status()
-        data = json.loads(r.content.decode("utf-8"))  # serwer nie podaje kodowania
-        for item in data.get("content", []):
-            if item.get("specimenType", "Ludzki") != "Ludzki":
-                continue
-            yield item
-            seen += 1
-            if limit and seen >= limit:
-                return
-        if data.get("last", True):
-            return
-        page += 1
+# --- rejestr (CSV) ----------------------------------------------------------------------
+def read_registry_csv(text: str) -> Iterator[dict]:
+    """Wiersze leków dla ludzi z pliku CSV RPL (separator ";", pola w cudzysłowach)."""
+    for row in csv.DictReader(io.StringIO(text.lstrip("﻿")), delimiter=";"):
+        if row.get(COL_KIND, "Ludzki") == "Ludzki" and row.get(COL_ID, "").strip().isdigit():
+            yield row
 
 
-def upsert_product(item: dict) -> Product:
-    product = db.session.get(Product, item["id"])
+def download_registry(client: Client) -> str:
+    r = client.get(current_app.config["RPL_CSV_URL"])
+    r.raise_for_status()
+    return r.content.decode("utf-8")
+
+
+def parse_packages(text: str | None) -> list[tuple[str, bool, str]]:
+    """Kolumna "Opakowanie": na zmianę linia "GTIN ¦ kategoria ¦ [Skasowane ¦] id" i opis opakowania.
+    Zwraca (GTIN-14, czy skasowane, opis)."""
+    lines = (text or "").splitlines()
+    out: list[tuple[str, bool, str]] = []
+    for i, line in enumerate(lines):
+        m = RE_PACKAGE.match(line)
+        if not m or not gtin_check_ok(m.group(1)):
+            continue
+        nxt = lines[i + 1].strip() if i + 1 < len(lines) and not RE_PACKAGE.match(lines[i + 1]) else ""
+        out.append((to_gtin14(m.group(1)), "Skasowane" in m.group(2), nxt[:200]))
+    return out
+
+
+def set_gtins(product: Product, packages: list[tuple[str, bool, str]]) -> None:
+    wanted = {code: (deleted, desc) for code, deleted, desc in packages}
+    for g in list(product.gtins):
+        if g.code not in wanted:
+            product.gtins.remove(g)
+    current = {g.code: g for g in product.gtins}
+    for code, (deleted, desc) in wanted.items():
+        g = current.get(code) or db.session.get(Gtin, code)
+        if g is None:
+            g = Gtin(code=code)
+        g.product, g.deleted, g.package = product, deleted, desc   # kod mógł przejść do innego rekordu
+        db.session.add(g)   # w SQLAlchemy 2 przypisanie relacji nie dodaje obiektu do sesji
+
+
+def first_url(row: dict, cols) -> str | None:
+    for col in cols:
+        if (row.get(col) or "").strip():
+            return row[col].strip()
+    return None
+
+
+def upsert_product(row: dict) -> Product:
+    pid = int(row[COL_ID])
+    product = db.session.get(Product, pid)
     if product is None:
-        product = Product(id=item["id"], status=PENDING)
+        product = Product(id=pid, status=PENDING)
         db.session.add(product)
-    product.name = item.get("medicinalProductName") or ""
-    product.common_name = item.get("commonName")
-    product.power = item.get("medicinalProductPower")
-    product.form = item.get("pharmaceuticalFormName")
-    product.holder = item.get("subjectMedicinalProductName")
-    product.registry_number = item.get("registryNumber")
-    product.atc = item.get("atcCode") or None
+    product.name = row.get(COL_NAME) or ""
+    product.common_name = row.get(COL_COMMON) or None
+    product.power = row.get(COL_POWER) or None
+    product.form = row.get(COL_FORM) or None
+    product.holder = (row.get(COL_HOLDER) or "").splitlines()[0] if row.get(COL_HOLDER) else None
+    product.registry_number = row.get(COL_REG_NO) or None
+    product.atc = row.get(COL_ATC) or None
+    product.procedure = row.get(COL_PROCEDURE) or None
+    product.chpl_url = first_url(row, [COL_CHPL])
+    product.leaflet_url = first_url(row, LEAFLET_COLS)
+    m = RE_RPL_ID.search(product.chpl_url or product.leaflet_url or "")
+    product.rpl_id = int(m.group(1)) if m else None
     product.group_key = group_key(product.common_name, product.power)
     product.active = True
-    if "gtin" in item:  # kody opakowań; pole może nie występować w każdej wersji API
-        set_gtins(product, item.get("gtin"))
+    set_gtins(product, parse_packages(row.get(COL_PACKAGES)))
+    if product.chpl_url is None and not product.manual:
+        product.status, product.review_reason, product.excipients = NO_CHPL, None, []
     return product
 
 
-def parse_gtins(value) -> list[str]:
-    """Pole "gtin" z RPL: kody rozdzielone znakiem nowej linii (także zapisanym jako "\\n")."""
-    if not value:
-        return []
-    if isinstance(value, list):
-        parts = [str(v) for v in value]
-    else:
-        parts = re.split(r"\\n|\n|[,;\s]+", str(value))
-    codes = []
-    for part in parts:
-        digits = re.sub(r"\D", "", part)
-        if digits and gtin_check_ok(digits):
-            codes.append(to_gtin14(digits))
-    return list(dict.fromkeys(codes))
-
-
-def set_gtins(product: Product, value) -> None:
-    codes = parse_gtins(value)
-    current = {g.code: g for g in product.gtins}
-    for code in codes:
-        if code in current:
-            continue
-        existing = db.session.get(Gtin, code)
-        if existing is not None:      # kod przeszedł do innego rekordu
-            existing.product = product
-        else:
-            product.gtins.append(Gtin(code=code))
-    for code, g in current.items():
-        if code not in codes:
-            product.gtins.remove(g)
+def load_registry(text: str, limit: int | None = None, mark_missing: bool = True) -> dict:
+    """Wczytuje rejestr z tekstu CSV. Leki nieobecne w pełnym pliku są oznaczane jako wycofane."""
+    stats = {"leki": 0, "leki_nowe": 0, "leki_wycofane": 0, "leki_bez_chpl": 0}
+    seen: set[int] = set()
+    for row in read_registry_csv(text):
+        is_new = db.session.get(Product, int(row[COL_ID])) is None
+        product = upsert_product(row)
+        seen.add(product.id)
+        stats["leki"] += 1
+        stats["leki_nowe"] += is_new
+        stats["leki_bez_chpl"] += product.chpl_url is None
+        if limit and stats["leki"] >= limit:
+            break
+    if mark_missing and not limit:
+        for product in Product.query.filter(Product.active.is_(True)):
+            if product.id not in seen:
+                product.active = False
+                stats["leki_wycofane"] += 1
+    db.session.commit()
+    stats["_seen"] = seen
+    return stats
 
 
 # --- skład leku -------------------------------------------------------------------------
@@ -173,9 +224,12 @@ def apply_composition(product: Product, doc_changed: bool = False) -> None:
         if doc_changed:  # skład ręczny zostaje, ale redaktor musi go potwierdzić
             product.status, product.review_reason = REVIEW, "ChPL zmienił się po ręcznej edycji składu"
         return
+    if product.chpl_url is None:
+        product.status, product.review_reason, product.excipients = NO_CHPL, None, []
+        return
     doc = product.chpl
     if doc is None or not doc.parse_result:
-        product.status, product.review_reason = REVIEW, "brak ChPL"
+        product.status, product.review_reason = REVIEW, "nie udało się pobrać ChPL"
         product.excipients = []
         return
     result = Result.from_dict(doc.parse_result)
@@ -207,7 +261,10 @@ def store_document(content: bytes, url: str, headers, tables: Tables) -> ChplDoc
 
 
 def check_chpl(product: Product, client: Client, tables: Tables, stats: dict) -> None:
-    url = current_app.config["RPL_CHPL_URL"].format(id=product.id)
+    url = product.chpl_url
+    if not url:
+        apply_composition(product)
+        return
     head_sig = None
     try:
         head = client.head(url)
@@ -225,7 +282,7 @@ def check_chpl(product: Product, client: Client, tables: Tables, stats: dict) ->
     if r.status_code == 404:
         product.chpl = None
         apply_composition(product)
-        stats["chpl_brak"] += 1
+        stats["chpl_bledy"] += 1
         return
     r.raise_for_status()
     old_doc_id = product.chpl_id
@@ -259,33 +316,26 @@ def reparse_documents(only_review: bool = True) -> int:
 
 
 # --- przebieg importu ------------------------------------------------------------------
-def run_import(limit: int | None = None, with_chpl: bool = True,
+def run_import(limit: int | None = None, with_chpl: bool = True, csv_path: Path | None = None,
                progress: Callable[[str], None] = lambda msg: None) -> ImportRun:
+    """Rejestr z CSV (z sieci albo z pliku), potem ChPL od leków sprawdzanych najdawniej,
+    więc przerwany import kontynuuje przy następnym uruchomieniu."""
     run = ImportRun(status="trwa", stats={})
     db.session.add(run)
     db.session.commit()
-    stats = {k: 0 for k in ("leki", "leki_nowe", "leki_wycofane", "chpl_nowe", "chpl_zmienione",
-                            "chpl_bez_zmian", "chpl_brak", "chpl_bledy")}
+    stats = {k: 0 for k in ("chpl_nowe", "chpl_zmienione", "chpl_bez_zmian", "chpl_bledy")}
     client = Client(current_app.config["RPL_DELAY_SECONDS"])
     try:
-        seen: set[int] = set()
-        for item in fetch_registry(client, limit):
-            is_new = db.session.get(Product, item["id"]) is None
-            upsert_product(item)
-            seen.add(item["id"])
-            stats["leki"] += 1
-            stats["leki_nowe"] += is_new
-        if limit is None:  # pełna lista: czego nie ma w rejestrze, oznaczamy jako wycofane
-            for product in Product.query.filter(Product.active.is_(True)):
-                if product.id not in seen:
-                    product.active = False
-                    stats["leki_wycofane"] += 1
-        db.session.commit()
-        progress(f"Rejestr: {stats['leki']} leków ({stats['leki_nowe']} nowych)")
+        text = csv_path.read_text(encoding="utf-8") if csv_path else download_registry(client)
+        reg = load_registry(text, limit=limit)
+        seen = reg.pop("_seen")
+        stats.update(reg)
+        progress(f"Rejestr: {reg['leki']} leków ({reg['leki_nowe']} nowych, {reg['leki_bez_chpl']} bez ChPL)")
 
         if with_chpl:
             tables = tables_from_db()
-            todo = (Product.query.filter(Product.active.is_(True), Product.id.in_(seen))
+            todo = (Product.query.filter(Product.active.is_(True), Product.chpl_url.isnot(None),
+                                         Product.id.in_(seen))
                     .order_by(Product.chpl_checked_at.is_(None).desc(), Product.chpl_checked_at).all())
             for n, product in enumerate(todo, 1):
                 try:

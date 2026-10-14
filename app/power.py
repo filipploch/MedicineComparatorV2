@@ -62,9 +62,16 @@ def active_substances(common_name: str | None) -> list[str]:
     return [s.strip().lower() for s in protected.split("+") if s.strip()]
 
 
+# Nazwy powszechne, które nie wskazują substancji czynnej, więc nie dają odpowiedników
+NON_SPECIFIC = ("produkt złożony", "homeopatyczny produkt leczniczy", "preparat homeopatyczny",
+                "produkt leczniczy roślinny", "brak")
+
+
 def group_key(common_name: str | None, power: str | None) -> str | None:
     subs = active_substances(common_name)
-    if not subs:
+    if not subs or any(s.startswith(NON_SPECIFIC) for s in subs):
+        return None
+    if not power or not re.search(r"\d", power):   # bez mocy (np. "-") nie da się porównać
         return None
     powers = normalize_power(power)
     if powers and len(powers) == len(subs):

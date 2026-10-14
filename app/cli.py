@@ -69,11 +69,13 @@ def register_cli(app: Flask) -> None:
 
     @app.cli.command("import-data")
     @click.option("--limit", type=int, help="tylko pierwsze N leków (do testów)")
-    @click.option("--bez-chpl", is_flag=True, help="tylko lista leków, bez pobierania ChPL")
-    def import_data(limit, bez_chpl):
-        """Pobiera rejestr i ChPL (uruchamiane z crona raz w tygodniu)."""
+    @click.option("--bez-chpl", is_flag=True, help="tylko rejestr, bez pobierania ChPL")
+    @click.option("--csv", "csv_path", type=click.Path(exists=True, dir_okay=False, path_type=Path),
+                  help="rejestr z pobranego wcześniej pliku CSV zamiast z sieci")
+    def import_data(limit, bez_chpl, csv_path):
+        """Pobiera rejestr (CSV) i ChPL. Przerwany import kontynuuje przy kolejnym uruchomieniu."""
         from .importer import run_import
-        run = run_import(limit=limit, with_chpl=not bez_chpl, progress=click.echo)
+        run = run_import(limit=limit, with_chpl=not bez_chpl, csv_path=csv_path, progress=click.echo)
         click.echo(f"Import {run.status}: {run.stats}")
         if run.error:
             click.echo(run.error, err=True)
@@ -88,33 +90,30 @@ def register_cli(app: Flask) -> None:
 
     @app.cli.command("load-registry")
     @click.argument("file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
-    def load_registry(file: Path):
-        """Wczytuje leki z pliku JSON w formacie odpowiedzi API RPL (bez sieci, do testów)."""
-        import json
-        from .importer import upsert_product
-        data = json.loads(file.read_text(encoding="utf-8"))
-        items = data["content"] if isinstance(data, dict) else data
-        for item in items:
-            upsert_product(item)
-        db.session.commit()
-        click.echo(f"Wczytano {len(items)} leków.")
+    def load_registry_cmd(file: Path):
+        """Wczytuje rejestr z pliku CSV RPL bez pobierania ChPL (np. dane do testów)."""
+        from .importer import load_registry
+        stats = load_registry(file.read_text(encoding="utf-8"), mark_missing=False)
+        stats.pop("_seen")
+        click.echo(f"Wczytano: {stats}")
 
     @app.cli.command("load-chpl")
     @click.argument("folder", type=click.Path(exists=True, file_okay=False, path_type=Path))
     def load_chpl(folder: Path):
-        """Wczytuje lokalne pliki Charakterystyka-<id>-....pdf (bez sieci, do testów)."""
+        """Wczytuje lokalne pliki Charakterystyka-<id>-....pdf, gdzie <id> to numer z adresu ChPL w rejestrze."""
         from .importer import apply_composition, store_document, tables_from_db
         tables, n = tables_from_db(), 0
         for pdf in sorted(folder.glob("*.pdf")):
             m = re.match(r"Charakterystyka-(\d+)-", pdf.name)
-            product = db.session.get(Product, int(m.group(1))) if m else None
-            if product is None:
+            products = Product.query.filter_by(rpl_id=int(m.group(1))).all() if m else []
+            if not products:
                 click.echo(f"pominięto {pdf.name} (brak leku w bazie)")
                 continue
-            doc = store_document(pdf.read_bytes(), app.config["RPL_CHPL_URL"].format(id=product.id),
-                                 {"Content-Disposition": f'attachment; filename="{pdf.name}"'}, tables)
-            product.chpl = doc
-            apply_composition(product)
+            for product in products:
+                doc = store_document(pdf.read_bytes(), product.chpl_url or "",
+                                     {"Content-Disposition": f'attachment; filename="{pdf.name}"'}, tables)
+                product.chpl = doc
+                apply_composition(product)
             n += 1
         db.session.commit()
         click.echo(f"Wczytano {n} plików.")

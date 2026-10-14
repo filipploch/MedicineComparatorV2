@@ -18,14 +18,9 @@ def create_app(config: dict | None = None) -> Flask:
     app.config.update(
         SECRET_KEY=os.environ.get("SECRET_KEY", "dev-tylko-lokalnie"),
         SQLALCHEMY_DATABASE_URI=os.environ.get("DATABASE_URL", f"sqlite:///{BASE_DIR / 'instance' / 'leki.db'}"),
-        # Rejestr Produktów Leczniczych
-        RPL_SEARCH_URL=os.environ.get(
-            "RPL_SEARCH_URL",
-            "https://rejestrymedyczne.ezdrowie.gov.pl/api/rpl/medicinal-products/search/public"),
-        RPL_CHPL_URL=os.environ.get(
-            "RPL_CHPL_URL",
-            "https://rejestry.ezdrowie.gov.pl/api/rpl/medicinal-products/{id}/characteristic"),
-        RPL_PAGE_SIZE=int(os.environ.get("RPL_PAGE_SIZE", 1000)),
+        # Rejestr Produktów Leczniczych: pełny wykaz w CSV (link "Pobierz CSV" na rejestry.ezdrowie.gov.pl/registry/rpl)
+        RPL_CSV_URL=os.environ.get(
+            "RPL_CSV_URL", "https://rejestry.ezdrowie.gov.pl/api/rpl/medicinal-products/public-pl-report/get-csv"),
         RPL_DELAY_SECONDS=float(os.environ.get("RPL_DELAY_SECONDS", 1.0)),
         # Znaki, które skaner lub użytkownik może dopisać przed kodem GTIN / Data Matrix
         SCAN_PREFIXES=os.environ.get("SCAN_PREFIXES", "@"),

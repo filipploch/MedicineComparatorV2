@@ -6,9 +6,13 @@ i punktu 6.1 Charakterystyk Produktów Leczniczych (ChPL).
 
 ## Jak to działa
 
-1. **Import** (`flask import-data`, raz w tygodniu z crona) pobiera listę leków z API RPL, a dla każdego leku
-   sprawdza, czy zmienił się jego ChPL. Najpierw wysyła zapytanie HEAD (nazwa pliku, rozmiar, ETag), a PDF pobiera
-   tylko po zmianie. Ten sam plik pod kilkoma rekordami (np. różne moce) jest parsowany raz (SHA-256).
+1. **Import** (`flask import-data`, raz w tygodniu albo po pojawieniu się internetu) pobiera pełny wykaz RPL
+   jako jeden plik CSV (ok. 16 MB: leki, moc, postać, kody GTIN opakowań z kolumny „Opakowanie”, linki do ChPL
+   i ulotek), a potem dla każdego leku z ChPL sprawdza, czy plik się zmienił. Najpierw wysyła zapytanie HEAD
+   (nazwa pliku, rozmiar, ETag), a PDF pobiera tylko po zmianie. Ten sam plik pod kilkoma rekordami (np. różne
+   moce) jest parsowany raz (SHA-256). Przerwany import kontynuuje przy następnym uruchomieniu od leków sprawdzanych
+   najdawniej. Leki, dla których rejestr nie udostępnia ChPL (dopuszczone centralnie przez EMA, import równoległy;
+   w 2026 r. ok. 8,7 tys. z 20,3 tys.), dostają status „brak ChPL w rejestrze” z linkiem do ulotki, jeśli jest.
 2. **Parser** (`app/chpl_parser.py`) wycina punkt 6.1, pomija etykiety („Rdzeń tabletki”, „Korpus:”), rozbija
    mieszanki na składniki, tłumaczy numery E, sprowadza nazwy do słownika i przypisuje skład do konkretnej mocy
    („[Tylko dla 20 mg]”, „267 mg tabletka”).
@@ -32,9 +36,8 @@ Kody można wpisać skanerem działającym jak klawiatura (kod + Enter) albo zes
 (przycisk „Skanuj aparatem”, biblioteka ZXing ładowana dopiero po kliknięciu). Aparat działa tylko przez HTTPS
 (lokalnie także na `localhost`/`127.0.0.1`). Rozpoznawanie kodów jest w `app/codes.py`.
 
-Kody GTIN opakowań importer bierze z pola `gtin` odpowiedzi RPL (kody rozdzielone znakiem nowej linii), tak jak
-robiło to stare repozytorium. W odpowiedzi wyszukiwarki RPL z 2026 r. tego pola nie było, więc trzeba ustalić,
-skąd je teraz pobierać; bez niego wyszukiwanie po kodzie nie znajdzie leku.
+Kody GTIN pochodzą z kolumny „Opakowanie” pliku CSV (linie „GTIN ¦ kategoria ¦ [Skasowane ¦] id” i opis
+opakowania). Opakowania skasowane z rejestru zostają w wyszukiwarce, bo mogą jeszcze być w aptekach.
 
 ## Uruchomienie lokalne
 
@@ -44,14 +47,15 @@ pip install -r requirements.txt
 export FLASK_APP=wsgi.py SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
 flask init-db                      # tabele + słowniki startowe z katalogu seed/
 flask create-admin redaktor        # konto do panelu
-flask import-data --limit 50       # próbny import 50 leków (pełny: bez --limit)
+flask import-data --limit 50       # próbny import: rejestr + ChPL pierwszych 50 leków (pełny: bez --limit)
+flask import-data --csv plik.csv   # rejestr z pobranego wcześniej pliku CSV
 flask run
 ```
 
 Bez dostępu do sieci można wczytać dane demonstracyjne:
 
 ```bash
-flask load-registry tests/fixtures/rejestr_demo.json
+flask load-registry tests/fixtures/rejestr_demo.csv
 flask load-chpl katalog/z/plikami   # pliki o nazwach Charakterystyka-<id>-....pdf
 ```
 
@@ -75,8 +79,8 @@ Chrome na Androidzie: „Zaawansowane” → „Przejdź do strony”; Safari na
 - `--http` uruchamia bez HTTPS (wszystko poza aparatem działa).
 - Skaner kodów podłączony do komputera działa w każdej przeglądarce, także bez HTTPS.
 
-Dane do testów bez dostępu do RPL: `flask --app wsgi load-registry tests/fixtures/rejestr_demo.json` i
-`flask --app wsgi load-chpl <katalog z ChPL>` (pliki `Charakterystyka-<id>-….pdf`; ChPL MIG 400 i Nurofen Forte
+Dane do testów bez dostępu do RPL: `flask --app wsgi load-registry tests/fixtures/rejestr_demo.csv` i
+`flask --app wsgi load-chpl <katalog z ChPL>` (pliki `Charakterystyka-<id>-….pdf`, gdzie `<id>` to numer z adresu ChPL w rejestrze; ChPL MIG 400 i Nurofen Forte
 zapisz jako `Charakterystyka-19752-mig.pdf` i `Charakterystyka-9487-nurofen.pdf`).
 
 ## Komendy
@@ -85,7 +89,7 @@ zapisz jako `Charakterystyka-19752-mig.pdf` i `Charakterystyka-9487-nurofen.pdf`
 |---|---|
 | `flask init-db` | tworzy tabele i wczytuje słowniki z `seed/` (nie nadpisuje istniejących wpisów) |
 | `flask create-admin LOGIN` | zakłada konto redaktora albo zmienia hasło |
-| `flask import-data [--limit N] [--bez-chpl]` | import z RPL |
+| `flask import-data [--limit N] [--bez-chpl] [--csv PLIK]` | import z RPL (rejestr z sieci albo z pobranego pliku CSV) |
 | `flask reparse [--wszystkie]` | ponowne parsowanie zapisanych punktów 6.1 po zmianach w słownikach |
 | `flask load-registry PLIK` / `flask load-chpl KATALOG` | wczytanie danych z plików (testy, praca bez sieci) |
 
@@ -100,7 +104,7 @@ zapisz jako `Charakterystyka-19752-mig.pdf` i `Charakterystyka-9487-nurofen.pdf`
   15 2 * * 1  cd /srv/leki && .venv/bin/flask --app wsgi import-data >> /var/log/leki-import.log 2>&1
   ```
 
-  Pełny import pierwszy raz pobiera ok. 23 tys. PDF i przy odstępie 1 s między zapytaniami trwa kilka godzin.
+  Pełny import pierwszy raz pobiera ok. 11,5 tys. PDF (kilka GB) i przy odstępie 1 s między zapytaniami trwa kilka godzin.
   Wynik każdego uruchomienia widać w panelu (dziennik importów); brak nowego wpisu oznacza, że cron nie działa.
 - Przed uruchomieniem produkcyjnym sprawdź warunki korzystania z RPL (serwis ma ograniczenia dla robotów
   w robots.txt) i nie zmniejszaj odstępu między zapytaniami (`RPL_DELAY_SECONDS`).
