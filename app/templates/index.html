@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
+{% block content %}
+<h1>Porównaj substancje pomocnicze w odpowiednikach leków</h1>
+<p class="muted">Odpowiedniki to leki z tymi samymi substancjami czynnymi w tej samej mocy, np. różne marki
+  ibuprofenu 400 mg. Mogą się różnić substancjami pomocniczymi, co ma znaczenie przy alergiach i nietolerancjach.</p>
+<form class="search" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="Nazwa leku, np. Ibuprom Max" autofocus>
+  <button>Szukaj</button>
+</form>
+{% if q and not products %}
+  <p>Nie znaleziono leków zawierających „{{ q }}” w nazwie.</p>
+{% elif products %}
+  <table>
+    <thead><tr><th>Lek</th><th>Moc</th><th>Postać</th><th>Podmiot odpowiedzialny</th><th>Skład</th></tr></thead>
+    <tbody>
+    {% for p in products %}
+      <tr>
+        <td><a href="{{ url_for('public.product', product_id=p.id) }}">{{ p.name }}</a></td>
+        <td>{{ p.power }}</td><td>{{ p.form }}</td><td>{{ p.holder }}</td>
+        <td>{{ status_badge(p) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
+{% endblock %}

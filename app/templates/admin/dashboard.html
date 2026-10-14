@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Panel{% endblock %}
+{% block content %}
+<h1>Panel redaktora</h1>
+<div class="stats">
+  <a class="stat" href="{{ url_for('admin.queue') }}"><b>{{ counts.get('weryfikacja', 0) }}</b>do weryfikacji</a>
+  <div class="stat"><b>{{ counts.get('ok', 0) }}</b>ze składem</div>
+  <div class="stat"><b>{{ counts.get('oczekuje', 0) }}</b>czeka na ChPL</div>
+</div>
+
+<h2>Najczęstsze nieznane nazwy</h2>
+{% if unknown %}
+  <table><tbody>
+  {% for name, n in unknown %}<tr><td>{{ name }}</td><td>{{ n }} dok.</td></tr>{% endfor %}
+  </tbody></table>
+  <p><a href="{{ url_for('admin.unknown') }}">Rozwiąż wszystkie →</a></p>
+{% else %}<p class="muted">Brak.</p>{% endif %}
+
+<h2>Dziennik importów</h2>
+{% if runs %}
+<table>
+  <thead><tr><th>Start</th><th>Koniec</th><th>Wynik</th><th>Statystyki</th></tr></thead>
+  <tbody>
+  {% for r in runs %}
+    <tr>
+      <td>{{ r.started_at.strftime('%d.%m.%Y %H:%M') }}</td>
+      <td>{{ r.finished_at.strftime('%d.%m.%Y %H:%M') if r.finished_at else '—' }}</td>
+      <td><span class="badge {{ 'ok' if r.status == 'ok' else 'weryfikacja' }}">{{ r.status }}</span></td>
+      <td class="muted">{% for k, v in (r.stats or {}).items() if v %}{{ k }}: {{ v }}{% if not loop.last %}, {% endif %}{% endfor %}
+        {% if r.error %}<details><summary>błąd</summary><pre class="raw">{{ r.error }}</pre></details>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <p class="notice">Import jeszcze się nie odbył. Uruchom <code>flask import-data</code> albo sprawdź crona.</p>
+{% endif %}
+
+<h2>Narzędzia</h2>
+<form method="post" action="{{ url_for('admin.reparse_all') }}">{{ csrf() }}
+  <button class="secondary">Przetwórz ponownie wszystkie ChPL (po zmianach w słownikach)</button></form>
+{% endblock %}

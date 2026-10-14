@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_badge %}
+{% block title %}{{ p.name }} {{ p.power }}{% endblock %}
+{% block content %}
+<h1>{{ p.name }} <span class="muted">{{ p.power }}</span></h1>
+<div class="card">
+  <p>{{ p.form }} · {{ p.holder }}{% if not p.active %} · <strong>usunięty z rejestru</strong>{% endif %}</p>
+  <p class="muted">Substancje czynne: {{ p.common_name }}{% if p.atc %} · ATC {{ p.atc }}{% endif %}
+    · nr pozwolenia {{ p.registry_number }}</p>
+  {% if current_user.is_authenticated %}<p><a href="{{ url_for('admin.product', product_id=p.id) }}">Edytuj skład w panelu</a></p>{% endif %}
+</div>
+
+<h2>Substancje pomocnicze {{ status_badge(p) }}</h2>
+{% if p.status == 'ok' %}
+  {% if p.excipients %}
+    <ul class="excipients">{% for e in p.excipients %}<li>{{ e.name }}</li>{% endfor %}</ul>
+  {% else %}
+    <p>Według ChPL lek nie zawiera substancji pomocniczych.</p>
+  {% endif %}
+{% else %}
+  <p class="notice">Skład w trakcie weryfikacji. Do tego czasu sprawdź punkt 6.1 w ChPL.</p>
+{% endif %}
+{% if p.chpl %}
+  <p><a href="{{ p.chpl.source_url }}" rel="noopener">Charakterystyka Produktu Leczniczego (PDF)</a>
+    <span class="muted">· sprawdzono {{ p.chpl_checked_at.strftime('%d.%m.%Y') if p.chpl_checked_at else p.chpl.fetched_at.strftime('%d.%m.%Y') }}</span></p>
+{% endif %}
+
+<h2>Odpowiedniki ({{ equivalents|length }})</h2>
+{% if equivalents %}
+  <p><a class="button" href="{{ url_for('public.compare', product_id=p.id) }}">Porównaj substancje pomocnicze</a></p>
+  <table>
+    <thead><tr><th>Lek</th><th>Postać</th><th>Podmiot odpowiedzialny</th><th>Skład</th></tr></thead>
+    <tbody>
+    {% for e in equivalents %}
+      <tr><td><a href="{{ url_for('public.product', product_id=e.id) }}">{{ e.name }}</a> {{ e.power }}</td>
+        <td>{{ e.form }}</td><td>{{ e.holder }}</td><td>{{ status_badge(e) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="muted">Brak odpowiedników w rejestrze.</p>
+{% endif %}
+{% endblock %}
