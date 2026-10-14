@@ -1,0 +1,24 @@
+{% from "_macros.html" import csrf %}
+{# Formularz rozwiązania nieznanej nazwy; zmienne: name, suggestion, excipients #}
+{% macro resolve_form(name, suggestion, excipients) %}
+<form method="post" action="{{ url_for('admin.resolve') }}" class="resolve">
+  {{ csrf() }}
+  <input type="hidden" name="name" value="{{ name }}">
+  <select name="action" aria-label="Działanie">
+    <option value="synonym" {% if suggestion %}selected{% endif %}>synonim substancji →</option>
+    <option value="substance" {% if not suggestion %}selected{% endif %}>nowa substancja o nazwie →</option>
+    <option value="label" {% if name.endswith(':') %}selected{% endif %}>etykieta do pomijania</option>
+    <option value="premix">mieszanka o składzie →</option>
+  </select>
+  <input type="text" name="target" list="excipients" value="{{ suggestion }}" placeholder="substancja (dla synonimu)">
+  <input type="text" name="canonical" value="{{ name.rstrip(':') }}" placeholder="nazwa (dla nowej)">
+  <details><summary>składniki mieszanki</summary>
+    <textarea name="components" placeholder="jeden składnik w linii; puste = pomiń mieszankę"></textarea>
+  </details>
+  <button>Zapisz</button>
+</form>
+{% endmacro %}
+
+{% macro excipient_datalist(excipients) %}
+<datalist id="excipients">{% for e in excipients %}<option value="{{ e }}">{% endfor %}</datalist>
+{% endmacro %}

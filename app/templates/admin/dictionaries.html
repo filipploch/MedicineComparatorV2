@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% from "admin/_resolve.html" import excipient_datalist %}
+{% block title %}Słowniki{% endblock %}
+{% block content %}
+<h1>Słowniki</h1>
+<p class="muted">Nowe wpisy dodaje się najwygodniej z listy <a href="{{ url_for('admin.unknown') }}">nieznanych nazw</a>.
+  Po usunięciu wpisu kliknij „Przetwórz ponownie wszystkie ChPL” w panelu.</p>
+{{ excipient_datalist(excipients|map(attribute='name')) }}
+
+<h2>Substancje i synonimy ({{ excipients|length }})</h2>
+<table>
+  <thead><tr><th>Substancja</th><th>Synonimy</th></tr></thead>
+  <tbody>
+  {% for e in excipients %}
+    <tr><td>{{ e.name }}</td><td>
+      {% for s in e.synonyms %}
+        <form class="inline" method="post" action="{{ url_for('admin.dictionary_delete') }}">{{ csrf() }}
+          <input type="hidden" name="kind" value="synonym"><input type="hidden" name="id" value="{{ s.id }}">
+          {{ s.text }} <button class="link" title="usuń synonim">×</button></form>{% if not loop.last %}, {% endif %}
+      {% endfor %}
+    </td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Numery E ({{ e_numbers|length }})</h2>
+<form method="post" action="{{ url_for('admin.add_e_number') }}" class="resolve">{{ csrf() }}
+  <input type="text" name="code" placeholder="E123" size="6">
+  <input type="text" name="target" list="excipients" placeholder="substancja">
+  <button>Dodaj</button>
+</form>
+<p>{% for e in e_numbers %}
+  <form class="inline" method="post" action="{{ url_for('admin.dictionary_delete') }}">{{ csrf() }}
+    <input type="hidden" name="kind" value="e"><input type="hidden" name="id" value="{{ e.code }}">
+    <strong>{{ e.code }}</strong> {{ e.excipient.name }} <button class="link" title="usuń">×</button></form>{% if not loop.last %} · {% endif %}
+{% endfor %}</p>
+
+<h2>Pomijane etykiety ({{ labels|length }})</h2>
+<p>{% for l in labels %}
+  <form class="inline" method="post" action="{{ url_for('admin.dictionary_delete') }}">{{ csrf() }}
+    <input type="hidden" name="kind" value="label"><input type="hidden" name="id" value="{{ l.id }}">
+    {{ l.text }} <button class="link" title="usuń">×</button></form>{% if not loop.last %} · {% endif %}
+{% endfor %}</p>
+
+<h2>Mieszanki ({{ premixes|length }})</h2>
+{% for m in premixes %}
+  <form method="post" action="{{ url_for('admin.dictionary_delete') }}">{{ csrf() }}
+    <input type="hidden" name="kind" value="premix"><input type="hidden" name="id" value="{{ m.id }}">
+    <strong>{{ m.name }}</strong>: {{ m.components|join(', ') or 'pomijana (skład podany osobno)' }}
+    <button class="link" title="usuń">×</button></form>
+{% else %}<p class="muted">Brak. Mieszanki dodaje się z listy nieznanych nazw.</p>{% endfor %}
+{% endblock %}

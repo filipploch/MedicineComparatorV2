@@ -1,0 +1,185 @@
+{
+  "laktoza": [
+    "laktoza jednowodna",
+    "laktoza bezwodna",
+    "lactosum"
+  ],
+  "sacharoza": [
+    "cukier"
+  ],
+  "glukoza": [
+    "glukoza jednowodna",
+    "dekstroza"
+  ],
+  "mannitol": [],
+  "sorbitol": [
+    "sorbitol ciekły",
+    "sorbitol ciekły krystalizujący",
+    "sorbitol ciekły niekrystalizujący",
+    "sorbitol ciekły częściowo odwodniony"
+  ],
+  "ksylitol": [],
+  "maltodekstryna": [],
+  "skrobia kukurydziana": [
+    "skrobia kukurydziana bezwodna"
+  ],
+  "skrobia ziemniaczana": [],
+  "skrobia pszenna": [],
+  "skrobia ryżowa": [],
+  "skrobia żelowana": [
+    "skrobia żelowana kukurydziana",
+    "skrobia kukurydziana żelowana",
+    "skrobia częściowo żelowana"
+  ],
+  "karboksymetyloskrobia sodowa": [
+    "sodu karboksymetyloskrobia"
+  ],
+  "celuloza mikrokrystaliczna": [
+    "celuloza mikrokrystaliczna krzemowana"
+  ],
+  "celuloza sproszkowana": [],
+  "hypromeloza": [
+    "hydroksypropylometyloceluloza"
+  ],
+  "hydroksypropyloceluloza": [
+    "hydroksypropyloceluloza niskopodstawiona"
+  ],
+  "metyloceluloza": [],
+  "etyloceluloza": [],
+  "karmeloza sodowa": [
+    "karboksymetyloceluloza sodowa"
+  ],
+  "kroskarmeloza sodowa": [],
+  "powidon": [
+    "poliwidon",
+    "povidonum"
+  ],
+  "krospowidon": [],
+  "kopowidon": [],
+  "magnezu stearynian": [
+    "stearynian magnezu"
+  ],
+  "wapnia stearynian": [],
+  "kwas stearynowy": [],
+  "sodu stearylofumaran": [],
+  "talk": [],
+  "krzemionka koloidalna bezwodna": [
+    "krzemionka koloidalna",
+    "krzemu dwutlenek koloidalny",
+    "krzemionka koloidalna uwodniona"
+  ],
+  "wapnia wodorofosforan": [
+    "wapnia wodorofosforan dwuwodny",
+    "wapnia wodorofosforan bezwodny"
+  ],
+  "wapnia węglan": [],
+  "magnezu tlenek": [
+    "magnezu tlenek lekki",
+    "magnezu tlenek ciężki"
+  ],
+  "sodu laurylosiarczan": [],
+  "polisorbat 80": [],
+  "makrogol": [
+    "glikol polietylenowy",
+    "polietylenoglikol"
+  ],
+  "glikol propylenowy": [],
+  "glicerol": [
+    "gliceryna",
+    "glicerol bezwodny",
+    "glicerol 85%"
+  ],
+  "alkohol poliwinylowy": [],
+  "tytanu dwutlenek": [],
+  "żelaza tlenki": [],
+  "żelaza tlenek żółty": [],
+  "żelaza tlenek czerwony": [],
+  "żelaza tlenek czarny": [],
+  "wosk Carnauba": [
+    "wosk carnauba"
+  ],
+  "wosk pszczeli biały": [
+    "wosk biały"
+  ],
+  "szelak": [],
+  "guma arabska": [],
+  "żelatyna": [],
+  "triacetyna": [],
+  "trietylu cytrynian": [],
+  "kwas cytrynowy": [
+    "kwas cytrynowy jednowodny",
+    "kwas cytrynowy bezwodny"
+  ],
+  "sodu cytrynian": [
+    "sodu cytrynian dwuwodny"
+  ],
+  "sodu chlorek": [],
+  "potasu chlorek": [],
+  "sodu wodorotlenek": [],
+  "potasu wodorotlenek": [],
+  "amonu wodorotlenek": [],
+  "kwas solny": [
+    "kwas chlorowodorowy"
+  ],
+  "kwas siarkowy": [],
+  "sodu węglan": [
+    "sodu węglan bezwodny"
+  ],
+  "sodu wodorowęglan": [],
+  "disodu fosforan": [
+    "disodu fosforan dwunastowodny",
+    "disodu fosforan dwuwodny",
+    "disodu wodorofosforan"
+  ],
+  "sodu diwodorofosforan": [
+    "sodu diwodorofosforan dwuwodny",
+    "sodu diwodorofosforan jednowodny"
+  ],
+  "disodu edetynian": [
+    "disodu edetynian dwuwodny"
+  ],
+  "sodu pirosiarczyn": [
+    "sodu metabisiarczyn"
+  ],
+  "sodu benzoesan": [],
+  "kwas sorbowy": [],
+  "potasu sorbinian": [],
+  "metylu parahydroksybenzoesan": [],
+  "propylu parahydroksybenzoesan": [],
+  "alkohol benzylowy": [],
+  "butylohydroksytoluen": [],
+  "butylohydroksyanizol": [],
+  "alfa-tokoferol": [],
+  "sacharyna": [
+    "sacharyna sodowa"
+  ],
+  "sukraloza": [],
+  "aspartam": [],
+  "acesulfam potasowy": [],
+  "etanol": [
+    "etanol bezwodny",
+    "etanol 96%",
+    "alkohol etylowy"
+  ],
+  "woda oczyszczona": [],
+  "woda do wstrzykiwań": [],
+  "tłuszcz stały": [],
+  "olej sojowy": [],
+  "olej rycynowy": [],
+  "parafina ciekła": [],
+  "wazelina biała": [],
+  "betacyklodekstryna": [
+    "betadeks"
+  ],
+  "symetykon": [
+    "simetikon",
+    "simeticon"
+  ],
+  "tartrazyna": [],
+  "żółcień chinolinowa": [],
+  "żółcień pomarańczowa": [],
+  "czerwień koszenilowa A": [],
+  "czerwień Allura AC": [],
+  "indygotyna": [],
+  "błękit brylantowy FCF": []
+}
