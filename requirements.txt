@@ -5,4 +5,5 @@ Flask-WTF>=1.2
 pdfplumber>=0.11
 requests>=2.31
 gunicorn>=22.0
+cryptography>=42      # certyfikat dla serwera testowego w sieci WiFi (serve_lan.py)
 # PostgreSQL na serwerze (opcjonalnie): psycopg[binary]>=3.1

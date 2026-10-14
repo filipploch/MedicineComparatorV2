@@ -57,6 +57,28 @@ flask load-chpl katalog/z/plikami   # pliki o nazwach Charakterystyka-<id>-....p
 
 Testy: `pip install pytest && python -m pytest`.
 
+## Testy na telefonie w sieci WiFi
+
+```bash
+python serve_lan.py          # wypisuje adres, np. https://192.168.1.20:8443/
+```
+
+Telefon musi być w tej samej sieci WiFi co komputer. Skrypt uruchamia aplikację przez HTTPS, bo przeglądarki
+dają dostęp do aparatu tylko stronom HTTPS (pod `http://192.168…` przycisk „Skanuj aparatem” się nie pojawi).
+Certyfikat tworzy sam komputer (`instance/lan-cert.pem`, z adresem IP w sieci WiFi; odnawiany po zmianie adresu),
+więc przy pierwszym wejściu telefon pokaże ostrzeżenie, które trzeba zaakceptować:
+Chrome na Androidzie: „Zaawansowane” → „Przejdź do strony”; Safari na iPhonie: „Pokaż szczegóły” → „odwiedź tę witrynę”.
+
+- Windows przy pierwszym uruchomieniu zapyta o zaporę: zezwól Pythonowi na dostęp w sieciach prywatnych.
+- Jeśli wykryty adres IP jest niewłaściwy (np. kilka kart sieciowych): `python serve_lan.py --ip 192.168.1.20`.
+- Z `pip install qrcode` skrypt wypisze też kod QR z adresem do zeskanowania telefonem.
+- `--http` uruchamia bez HTTPS (wszystko poza aparatem działa).
+- Skaner kodów podłączony do komputera działa w każdej przeglądarce, także bez HTTPS.
+
+Dane do testów bez dostępu do RPL: `flask --app wsgi load-registry tests/fixtures/rejestr_demo.json` i
+`flask --app wsgi load-chpl <katalog z ChPL>` (pliki `Charakterystyka-<id>-….pdf`; ChPL MIG 400 i Nurofen Forte
+zapisz jako `Charakterystyka-19752-mig.pdf` i `Charakterystyka-9487-nurofen.pdf`).
+
 ## Komendy
 
 | Komenda | Opis |
