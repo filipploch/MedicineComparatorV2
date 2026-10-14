@@ -10,7 +10,7 @@ from app.models import OK, REVIEW, ImportRun, Product, User
 from .conftest import FIXTURES
 
 REGISTRY = [i for i in json.loads((FIXTURES / "rejestr_demo.json").read_text(encoding="utf-8"))["content"]
-            if i["id"] in (11104, 900001, 900002)]
+            if i["id"] in (11104, 19752, 9487)]
 
 
 class FakeResponse:
@@ -33,7 +33,7 @@ class FakeRPL:
 
     def __init__(self, sections):
         self.registry = list(REGISTRY)
-        self.files = {11104: sections["11104"], 900001: sections["mig_400"], 900002: sections["nurofen_forte"]}
+        self.files = {11104: sections["11104"], 19752: sections["mig_400"], 9487: sections["nurofen_forte"]}
         self.versions = {k: "v1" for k in self.files}
         self.downloads = 0
 
@@ -76,18 +76,18 @@ def test_import_and_change_detection(rpl):
     assert run.status == "ok", run.error
     assert run.stats["leki"] == 3 and run.stats["chpl_nowe"] == 3
     assert status(11104)[0] == OK and "sacharoza" in status(11104)[1]
-    assert status(900001)[0] == OK
-    assert status(900002)[0] == REVIEW          # Nurofen: "tusz Opacode ..." spoza słownika
-    assert db.session.get(Product, 11104).group_key == db.session.get(Product, 900002).group_key  # 400 mg == 0,4 g
+    assert status(19752)[0] == OK
+    assert status(9487)[0] == REVIEW          # Nurofen: "tusz Opacode ..." spoza słownika
+    assert db.session.get(Product, 11104).group_key == db.session.get(Product, 9487).group_key  # 400 mg == 0,4 g
 
     downloads = rpl.downloads
     run = importer.run_import()                 # nic się nie zmieniło: same zapytania HEAD
     assert rpl.downloads == downloads and run.stats["chpl_bez_zmian"] == 3
 
-    rpl.versions[900001] = "v2"                 # nowa wersja ChPL MIG
-    rpl.files[900001] += "\nSacharoza"
+    rpl.versions[19752] = "v2"                 # nowa wersja ChPL MIG
+    rpl.files[19752] += "\nSacharoza"
     importer.run_import()
-    assert "sacharoza" in status(900001)[1]
+    assert "sacharoza" in status(19752)[1]
 
     rpl.registry = [i for i in rpl.registry if i["id"] != 11104]   # lek wycofany z rejestru
     run = importer.run_import()
@@ -97,17 +97,17 @@ def test_import_and_change_detection(rpl):
 def test_manual_composition_survives_import(rpl, client):
     importer.run_import()
     login(client)
-    r = client.post("/admin/lek/900002", data={"excipients": "Talk\nE 171\nNieznany składnik"})
+    r = client.post("/admin/lek/9487", data={"excipients": "Talk\nE 171\nNieznany składnik"})
     assert "Spoza słownika" in r.get_data(as_text=True)
-    client.post("/admin/lek/900002", data={"excipients": "Talk\nE 171"})
-    assert status(900002) == (OK, {"talk", "tytanu dwutlenek"})
+    client.post("/admin/lek/9487", data={"excipients": "Talk\nE 171"})
+    assert status(9487) == (OK, {"talk", "tytanu dwutlenek"})
 
     importer.run_import()                        # bez zmian w ChPL: skład ręczny zostaje
-    assert status(900002) == (OK, {"talk", "tytanu dwutlenek"})
-    rpl.versions[900002] = "v2"
-    rpl.files[900002] += "\nTalk"
+    assert status(9487) == (OK, {"talk", "tytanu dwutlenek"})
+    rpl.versions[9487] = "v2"
+    rpl.files[9487] += "\nTalk"
     importer.run_import()                        # ChPL się zmienił: skład zostaje, ale wraca do kolejki
-    assert status(900002) == (REVIEW, {"talk", "tytanu dwutlenek"})
+    assert status(9487) == (REVIEW, {"talk", "tytanu dwutlenek"})
 
 
 def login(client):
@@ -142,7 +142,7 @@ def test_admin_requires_login_and_resolves_unknown(rpl, client):
                                                  "action": "synonym", "target": "guma arabska"})
     client.post("/admin/nieznane/rozwiaz", data={"name": "tusz opacode s-1-15094", "action": "premix",
                                                  "components": ""})
-    st, names = status(900002)
+    st, names = status(9487)
     assert st == OK and "guma arabska" in names and not any("opacode" in n for n in names)
     assert ImportRun.query.count() == 1
 
@@ -153,3 +153,45 @@ def test_synonym_suggestions_are_conservative():
     assert suggest("guma arabska suszona rozpyłowo", existing) == "guma arabska"
     assert suggest("olejek pomarańczowy", existing) == ""       # podobne słowo to nie synonim
     assert suggest("glicerolu monokaprylokapronian", existing) == ""
+
+
+def load_demo(app):
+    from app.importer import upsert_product
+    for item in json.loads((FIXTURES / "rejestr_demo.json").read_text(encoding="utf-8"))["content"]:
+        upsert_product(item)
+    db.session.commit()
+
+
+@pytest.mark.parametrize("q", ["5909990657971", "@05909990657971",
+                               "0105909990657971211234567890\x1d17281231\x1d10LOT1"])
+def test_search_by_gtin_and_datamatrix(app, client, q):
+    load_demo(app)
+    r = client.get("/", query_string={"q": q})
+    assert r.status_code == 302 and r.headers["Location"].endswith("/lek/19752")
+
+
+def test_unknown_gtin(app, client):
+    load_demo(app)
+    r = client.get("/", query_string={"q": "5909990000000"})
+    assert r.status_code == 404 and "Nie znaleziono leku o kodzie GTIN" in r.get_data(as_text=True)
+
+
+def test_gtins_follow_registry(app):
+    from app.importer import upsert_product
+    load_demo(app)
+    item = next(i for i in json.loads((FIXTURES / "rejestr_demo.json").read_text(encoding="utf-8"))["content"]
+                if i["id"] == 19752)
+    upsert_product(dict(item, gtin="05909990657971"))      # dwa opakowania zniknęły z rejestru
+    db.session.commit()
+    assert [g.code for g in db.session.get(Product, 19752).gtins] == ["05909990657971"]
+
+
+def test_suggestions(app, client):
+    load_demo(app)
+    assert client.get("/api/podpowiedzi?q=ib").get_json() == []                  # mniej niż 3 znaki
+    assert client.get("/api/podpowiedzi?q=ibu").get_json() == ["Ibuprom Max"]
+    names = client.get("/api/podpowiedzi?q=ram").get_json()
+    assert names == ["Ramidilan HCT"]                                             # nazwy bez powtórzeń
+    assert client.get("/api/podpowiedzi?q=5909990").get_json() == []              # kod, nie nazwa
+    starts_first = client.get("/api/podpowiedzi?q=ine").get_json()
+    assert starts_first and all("ine" in n.lower() for n in starts_first)

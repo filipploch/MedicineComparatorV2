@@ -19,6 +19,23 @@ i punktu 6.1 Charakterystyk Produktów Leczniczych (ChPL).
    dokumenty w kolejce), słowniki, dziennik importów i ręczną edycję składu. Skład wpisany ręcznie nie jest
    nadpisywany przez import; gdy ChPL się zmieni, lek wraca do kolejki.
 
+## Wyszukiwanie
+
+Jedno pole przyjmuje:
+- **nazwę**: od 3 liter pojawia się lista pasujących nazw (`/api/podpowiedzi`), najpierw te, które zaczynają się
+  od wpisanego tekstu;
+- **GTIN**: EAN-13 z kodu kreskowego albo GTIN-14, także poprzedzony znakiem `@` (lista znaków w `SCAN_PREFIXES`);
+- **kod Data Matrix** z opakowania (GS1: `(01)` GTIN, `(17)` data ważności, `(10)` seria, `(21)` numer seryjny):
+  aplikacja wyciąga z niego GTIN, także gdy skaner zgubił separatory GS albo dodał prefiks `]d2`.
+
+Kody można wpisać skanerem działającym jak klawiatura (kod + Enter) albo zeskanować aparatem telefonu
+(przycisk „Skanuj aparatem”, biblioteka ZXing ładowana dopiero po kliknięciu). Aparat działa tylko przez HTTPS
+(lokalnie także na `localhost`/`127.0.0.1`). Rozpoznawanie kodów jest w `app/codes.py`.
+
+Kody GTIN opakowań importer bierze z pola `gtin` odpowiedzi RPL (kody rozdzielone znakiem nowej linii), tak jak
+robiło to stare repozytorium. W odpowiedzi wyszukiwarki RPL z 2026 r. tego pola nie było, więc trzeba ustalić,
+skąd je teraz pobierać; bez niego wyszukiwanie po kodzie nie znajdzie leku.
+
 ## Uruchomienie lokalne
 
 ```bash
@@ -75,7 +92,8 @@ app/
   chpl_parser.py   parser punktu 6.1 (bez zależności od Flaska)
   power.py         klucz odpowiedników
   importer.py      import z RPL i wykrywanie zmian ChPL
-  public.py        wyszukiwarka, strona leku, porównanie
+  codes.py         rozpoznawanie nazwy, GTIN i kodu Data Matrix
+  public.py        wyszukiwarka z podpowiedziami, strona leku, porównanie
   admin.py         panel redaktora
   cli.py           komendy flask
 seed/              słowniki startowe (do przejrzenia przez farmaceutę)

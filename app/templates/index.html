@@ -4,12 +4,40 @@
 <h1>Porównaj substancje pomocnicze w odpowiednikach leków</h1>
 <p class="muted">Odpowiedniki to leki z tymi samymi substancjami czynnymi w tej samej mocy, np. różne marki
   ibuprofenu 400 mg. Mogą się różnić substancjami pomocniczymi, co ma znaczenie przy alergiach i nietolerancjach.</p>
-<form class="search" method="get">
-  <input type="search" name="q" value="{{ q }}" placeholder="Nazwa leku, np. Ibuprom Max" autofocus>
-  <button>Szukaj</button>
+
+<form class="search finder" method="get" action="{{ url_for('public.index') }}" role="search" autocomplete="off">
+  <div class="combo">
+    <label for="q" class="visually-hidden">Nazwa leku, kod GTIN lub kod Data Matrix</label>
+    <input type="search" id="q" name="q" value="{{ q }}" autofocus
+           placeholder="Nazwa leku lub kod z opakowania"
+           role="combobox" aria-expanded="false" aria-controls="suggestions" aria-autocomplete="list"
+           data-suggest-url="{{ url_for('public.suggestions') }}" data-prefixes="{{ config.SCAN_PREFIXES }}">
+    <ul id="suggestions" role="listbox" hidden></ul>
+  </div>
+  <button type="submit">Szukaj</button>
+  <button type="button" id="scan-button" class="secondary" hidden
+          data-lib="{{ url_for('static', filename='vendor/zxing-browser.min.js') }}">Skanuj aparatem</button>
 </form>
-{% if q and not products %}
-  <p>Nie znaleziono leków zawierających „{{ q }}” w nazwie.</p>
+<p class="muted hint">Możesz wpisać nazwę (podpowiedzi od 3 liter), kod GTIN z kodu kreskowego albo zeskanować
+  kod Data Matrix skanerem lub aparatem telefonu.</p>
+
+<div id="scanner" class="scanner" hidden>
+  <div class="scanner-box">
+    <video id="scanner-video" playsinline muted></video>
+    <p id="scanner-status" class="muted">Skieruj aparat na kod Data Matrix lub kod kreskowy opakowania.</p>
+    <button type="button" id="scanner-close" class="secondary">Anuluj</button>
+  </div>
+</div>
+
+{% if query and query.kind == 'gtin' %}
+  <div class="notice">
+    <p>Nie znaleziono leku o kodzie GTIN <strong>{{ query.value }}</strong>
+      {%- if query.source == 'datamatrix' %} (odczytanym z kodu Data Matrix){% endif %}.</p>
+    {% if not query.valid %}<p>Cyfra kontrolna się nie zgadza: sprawdź, czy kod został wpisany bez błędów.</p>{% endif %}
+    <p>Spróbuj wyszukać lek po nazwie.</p>
+  </div>
+{% elif query and query.kind == 'name' and products|length == 0 and query.value|length >= 2 %}
+  <p>Nie znaleziono leków zawierających „{{ query.value }}” w nazwie.</p>
 {% elif products %}
   <table>
     <thead><tr><th>Lek</th><th>Moc</th><th>Postać</th><th>Podmiot odpowiedzialny</th><th>Skład</th></tr></thead>
@@ -24,4 +52,5 @@
     </tbody>
   </table>
 {% endif %}
+<script src="{{ url_for('static', filename='search.js') }}" defer></script>
 {% endblock %}

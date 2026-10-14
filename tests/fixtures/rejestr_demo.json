@@ -10,10 +10,11 @@
    "activeSubstanceName": "Ibuprofenum",
    "subjectMedicinalProductName": "dane demonstracyjne",
    "registryNumber": "demo-1",
-   "atcCode": ""
+   "atcCode": "",
+   "gtin": "05909990970025\\n05909990674121\\n05909990970018\\n05909990642632\\n05909990970032"
   },
   {
-   "id": 900001,
+   "id": 19752,
    "specimenType": "Ludzki",
    "medicinalProductName": "MIG 400",
    "commonName": "Ibuprofenum",
@@ -22,10 +23,11 @@
    "activeSubstanceName": "Ibuprofenum",
    "subjectMedicinalProductName": "dane demonstracyjne",
    "registryNumber": "demo-2",
-   "atcCode": ""
+   "atcCode": "",
+   "gtin": "05909990657971\\n05909990657964\\n05909990657988"
   },
   {
-   "id": 900002,
+   "id": 9487,
    "specimenType": "Ludzki",
    "medicinalProductName": "Nurofen Forte",
    "commonName": "Ibuprofenum",
@@ -34,7 +36,8 @@
    "activeSubstanceName": "Ibuprofenum",
    "subjectMedicinalProductName": "dane demonstracyjne",
    "registryNumber": "demo-3",
-   "atcCode": ""
+   "atcCode": "",
+   "gtin": "05909990493746\\n05909990493722\\n05909990493715\\n05909990493753\\n05909990493739"
   },
   {
    "id": 45144,

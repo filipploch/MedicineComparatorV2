@@ -27,6 +27,8 @@ def create_app(config: dict | None = None) -> Flask:
             "https://rejestry.ezdrowie.gov.pl/api/rpl/medicinal-products/{id}/characteristic"),
         RPL_PAGE_SIZE=int(os.environ.get("RPL_PAGE_SIZE", 1000)),
         RPL_DELAY_SECONDS=float(os.environ.get("RPL_DELAY_SECONDS", 1.0)),
+        # Znaki, które skaner lub użytkownik może dopisać przed kodem GTIN / Data Matrix
+        SCAN_PREFIXES=os.environ.get("SCAN_PREFIXES", "@"),
     )
     if config:
         app.config.update(config)

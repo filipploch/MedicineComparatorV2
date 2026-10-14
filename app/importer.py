@@ -21,7 +21,8 @@ from flask import current_app
 from . import db
 from .chpl_parser import (NO_SECTION_END, REASON_LABELS, Result, Tables, parse_pdf,
                           parse_section, skladniki_dla_mocy)
-from .models import (OK, PENDING, REVIEW, ChplDocument, ENumber, Excipient, IgnoredLabel,
+from .codes import gtin_check_ok, to_gtin14
+from .models import (OK, PENDING, REVIEW, ChplDocument, ENumber, Excipient, Gtin, IgnoredLabel,
                      ImportRun, Premix, Product, Synonym, now)
 from .power import group_key
 
@@ -124,7 +125,41 @@ def upsert_product(item: dict) -> Product:
     product.atc = item.get("atcCode") or None
     product.group_key = group_key(product.common_name, product.power)
     product.active = True
+    if "gtin" in item:  # kody opakowań; pole może nie występować w każdej wersji API
+        set_gtins(product, item.get("gtin"))
     return product
+
+
+def parse_gtins(value) -> list[str]:
+    """Pole "gtin" z RPL: kody rozdzielone znakiem nowej linii (także zapisanym jako "\\n")."""
+    if not value:
+        return []
+    if isinstance(value, list):
+        parts = [str(v) for v in value]
+    else:
+        parts = re.split(r"\\n|\n|[,;\s]+", str(value))
+    codes = []
+    for part in parts:
+        digits = re.sub(r"\D", "", part)
+        if digits and gtin_check_ok(digits):
+            codes.append(to_gtin14(digits))
+    return list(dict.fromkeys(codes))
+
+
+def set_gtins(product: Product, value) -> None:
+    codes = parse_gtins(value)
+    current = {g.code: g for g in product.gtins}
+    for code in codes:
+        if code in current:
+            continue
+        existing = db.session.get(Gtin, code)
+        if existing is not None:      # kod przeszedł do innego rekordu
+            existing.product = product
+        else:
+            product.gtins.append(Gtin(code=code))
+    for code, g in current.items():
+        if code not in codes:
+            product.gtins.remove(g)
 
 
 # --- skład leku -------------------------------------------------------------------------

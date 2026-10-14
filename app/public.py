@@ -1,19 +1,43 @@
-from flask import Blueprint, abort, render_template, request
+from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, url_for
+from sqlalchemy import case
 
 from . import db
-from .models import OK, Product
+from .codes import classify
+from .models import OK, Gtin, Product
 
 bp = Blueprint("public", __name__)
+SUGGEST_MIN_CHARS = 3
+SUGGEST_LIMIT = 12
 
 
 @bp.route("/")
 def index():
-    q = request.args.get("q", "").strip()
+    """Jedno pole: nazwa, GTIN (także z prefiksem, np. "@") albo zeskanowany kod Data Matrix."""
+    raw = request.args.get("q", "")
+    query = classify(raw, current_app.config["SCAN_PREFIXES"])
+    if query.kind == "gtin":
+        gtin = db.session.get(Gtin, query.value)
+        if gtin is not None:
+            return redirect(url_for(".product", product_id=gtin.product_id))
+        return render_template("index.html", q=raw, query=query, products=[]), 404
     products = []
-    if len(q) >= 2:
-        products = (Product.query.filter(Product.active.is_(True), Product.name.ilike(f"%{q}%"))
+    if query.kind == "name" and len(query.value) >= 2:
+        products = (Product.query.filter(Product.active.is_(True), Product.name.ilike(f"%{query.value}%"))
                     .order_by(Product.name, Product.power).limit(100).all())
-    return render_template("index.html", q=q, products=products)
+    return render_template("index.html", q=raw, query=query, products=products)
+
+
+@bp.route("/api/podpowiedzi")
+def suggestions():
+    """Nazwy leków pasujące do wpisanego tekstu (od 3 znaków); najpierw te, które się od niego zaczynają."""
+    q = request.args.get("q", "").strip()
+    if len(q) < SUGGEST_MIN_CHARS or classify(q, current_app.config["SCAN_PREFIXES"]).kind != "name":
+        return jsonify([])
+    starts = case((Product.name.ilike(f"{q}%"), 0), else_=1)
+    rows = (db.session.query(Product.name, starts.label("rank"))
+            .filter(Product.active.is_(True), Product.name.ilike(f"%{q}%"))
+            .group_by(Product.name).order_by("rank", Product.name).limit(SUGGEST_LIMIT).all())
+    return jsonify([r.name for r in rows])
 
 
 @bp.route("/lek/<int:product_id>")

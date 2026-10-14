@@ -47,11 +47,20 @@ class Product(db.Model):
     chpl_etag = db.Column(db.String(300))
     chpl_checked_at = db.Column(db.DateTime(timezone=True))
 
+    gtins = db.relationship("Gtin", back_populates="product", cascade="all, delete-orphan", order_by="Gtin.code")
+
     def equivalents(self):
         if not self.group_key:
             return []
         return (Product.query.filter(Product.group_key == self.group_key, Product.active.is_(True))
                 .order_by(Product.name).all())
+
+
+class Gtin(db.Model):
+    """Kod GTIN opakowania (14 cyfr; EAN-13 z pudełka jest dopełniany zerem z przodu)."""
+    code = db.Column(db.String(14), primary_key=True)
+    product_id = db.Column(db.ForeignKey("product.id", ondelete="CASCADE"), nullable=False, index=True)
+    product = db.relationship("Product", back_populates="gtins")
 
 
 class ChplDocument(db.Model):

@@ -7,6 +7,7 @@
   <p>{{ p.form }} · {{ p.holder }}{% if not p.active %} · <strong>usunięty z rejestru</strong>{% endif %}</p>
   <p class="muted">Substancje czynne: {{ p.common_name }}{% if p.atc %} · ATC {{ p.atc }}{% endif %}
     · nr pozwolenia {{ p.registry_number }}</p>
+  {% if p.gtins %}<p class="muted">GTIN opakowań: {{ p.gtins|map(attribute='code')|join(', ') }}</p>{% endif %}
   {% if current_user.is_authenticated %}<p><a href="{{ url_for('admin.product', product_id=p.id) }}">Edytuj skład w panelu</a></p>{% endif %}
 </div>
 
