@@ -14,6 +14,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import json
 import logging
 import re
 import time
@@ -25,9 +26,11 @@ import requests
 from flask import current_app
 
 from . import db
-from .chpl_parser import (NO_SECTION_END, REASON_LABELS, Result, Tables, parse_pdf,
-                          parse_section, skladniki_dla_mocy)
+from .chpl_parser import (REASON_LABELS, Result, Tables, eu_base, eu_numbers, parse_pdf, reparse,
+                          skladniki_dla_mocy, wybierz_czesc)
 from .codes import gtin_check_ok, to_gtin14
+from sqlalchemy import or_
+
 from .models import (NO_CHPL, OK, PENDING, REVIEW, ChplDocument, ENumber, Excipient, Gtin,
                      IgnoredLabel, ImportRun, Premix, Product, Synonym, now)
 from .power import group_key
@@ -185,7 +188,8 @@ def upsert_product(row: dict) -> Product:
     product.group_key = group_key(product.common_name, product.power)
     product.active = True
     set_gtins(product, parse_packages(row.get(COL_PACKAGES)))
-    if product.chpl_url is None and not product.manual:
+    product.eu_numbers = eu_numbers(row.get(COL_PACKAGES) or "")
+    if product.source_url is None and not product.manual:
         product.status, product.review_reason, product.excipients = NO_CHPL, None, []
     return product
 
@@ -219,29 +223,33 @@ def reasons_text(codes: list[str]) -> str:
 
 
 def apply_composition(product: Product, doc_changed: bool = False) -> None:
-    """Przypisuje rekordowi skład z jego ChPL (z uwzględnieniem mocy)."""
+    """Przypisuje rekordowi skład z jego ChPL (właściwa charakterystyka i moc)."""
     if product.manual:
         if doc_changed:  # skład ręczny zostaje, ale redaktor musi go potwierdzić
             product.status, product.review_reason = REVIEW, "ChPL zmienił się po ręcznej edycji składu"
         return
-    if product.chpl_url is None:
+
+    def review(reason: str) -> None:
+        product.status, product.review_reason, product.excipients = REVIEW, reason, []
+
+    if product.source_url is None:
         product.status, product.review_reason, product.excipients = NO_CHPL, None, []
         return
     doc = product.chpl
     if doc is None or not doc.parse_result:
-        product.status, product.review_reason = REVIEW, "nie udało się pobrać ChPL"
-        product.excipients = []
-        return
+        return review("nie udało się pobrać ChPL")
     result = Result.from_dict(doc.parse_result)
-    if result.status != "OK":
-        product.status, product.review_reason = REVIEW, reasons_text(result.powody)
-        product.excipients = []
-        return
-    items = skladniki_dla_mocy(result, product.power)
+    if product.source == "EMA" and product.eu_numbers and result.eu and \
+            not {eu_base(e) for e in product.eu_numbers} & {eu_base(e) for e in result.eu}:
+        return review("dokument EMA dotyczy innego leku (numery pozwoleń EU się nie zgadzają)")
+    part = wybierz_czesc(result, product.eu_numbers or [], product.power)
+    if part is None:
+        return review("nie udało się wskazać w dokumencie charakterystyki tego leku")
+    if part.status != "OK":
+        return review(reasons_text(part.powody))
+    items = skladniki_dla_mocy(part, product.power)
     if items is None:
-        product.status, product.review_reason = REVIEW, REASON_LABELS["MOC_NIEDOPASOWANA"]
-        product.excipients = []
-        return
+        return review(REASON_LABELS["MOC_NIEDOPASOWANA"])
     product.excipients = [excipient_by_name(i.nazwa) for i in items]
     product.status, product.review_reason = OK, None
 
@@ -261,7 +269,7 @@ def store_document(content: bytes, url: str, headers, tables: Tables) -> ChplDoc
 
 
 def check_chpl(product: Product, client: Client, tables: Tables, stats: dict) -> None:
-    url = product.chpl_url
+    url = product.source_url
     if not url:
         apply_composition(product)
         return
@@ -281,6 +289,8 @@ def check_chpl(product: Product, client: Client, tables: Tables, stats: dict) ->
     product.chpl_checked_at = now()
     if r.status_code == 404:
         product.chpl = None
+        if product.source == "EMA":       # brak polskiej informacji o produkcie pod tym adresem
+            product.ema_url = None
         apply_composition(product)
         stats["chpl_bledy"] += 1
         return
@@ -303,16 +313,66 @@ def reparse_documents(only_review: bool = True) -> int:
         query = query.filter(ChplDocument.parse_status != "OK")
     count = 0
     for doc in query.all():
-        previous = Result.from_dict(doc.parse_result or {})
-        result = parse_section(doc.raw_section, tables)
-        if NO_SECTION_END in previous.powody:
-            result.flag(NO_SECTION_END)
+        result = reparse(doc.parse_result, doc.raw_section, tables)
         doc.parse_status, doc.parse_result = result.status, result.to_dict()
         for product in doc.products:
             apply_composition(product)
         count += 1
     db.session.commit()
     return count
+
+
+# --- Europejska Agencja Leków ------------------------------------------------------------
+def ema_key(name: str) -> str:
+    return re.sub(r"[^0-9a-ząćęłńóśźżäöüéèàç]+", " ", (name or "").casefold()).strip()
+
+
+def ema_index(data: dict) -> dict[str, dict]:
+    """Leki dopuszczone centralnie z pliku JSON EMA: klucz nazwy -> adres strony i numer produktu."""
+    if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+        raise ValueError("nieoczekiwany format pliku leków EMA")
+    index: dict[str, dict] = {}
+    for rec in data["data"]:
+        if not isinstance(rec, dict) or rec.get("category") != "Human" or rec.get("medicine_status") != "Authorised":
+            continue
+        slug = (rec.get("medicine_url") or "").rstrip("/").rsplit("/", 1)[-1]
+        if slug and rec.get("name_of_medicine"):
+            index[ema_key(rec["name_of_medicine"])] = {"slug": slug, "number": rec.get("ema_product_number")}
+    return index
+
+
+def match_ema(name: str, index: dict[str, dict]) -> dict | None:
+    """Dokładna nazwa, a w drugiej kolejności najdłuższa nazwa EMA będąca początkiem nazwy z rejestru
+    ("Comirnaty" dla "Comirnaty Original/Omicron BA.4-5"). Dopasowanie potwierdzają potem numery EU."""
+    words = ema_key(name).split()
+    for n in range(len(words), 0, -1):
+        hit = index.get(" ".join(words[:n]))
+        if hit:
+            return hit
+    return None
+
+
+def sync_ema(client: Client, stats: dict) -> None:
+    """Dla leków centralnych bez ChPL w rejestrze ustala adres polskiej informacji o produkcie EMA."""
+    cfg = current_app.config
+    r = client.get(cfg["EMA_MEDICINES_URL"])
+    r.raise_for_status()
+    index = ema_index(json.loads(r.content.decode("utf-8")))
+    stats.update(ema_dopasowane=0, ema_niedopasowane=0)
+    for product in Product.query.filter(Product.active.is_(True), Product.chpl_url.is_(None),
+                                        Product.procedure == "CEN"):
+        hit = match_ema(product.name, index)
+        url = cfg["EMA_PRODUCT_INFO_URL"].format(slug=hit["slug"]) if hit else None
+        stats["ema_dopasowane" if hit else "ema_niedopasowane"] += 1
+        if url == product.ema_url:
+            continue
+        product.ema_url, product.ema_product_number = url, (hit or {}).get("number")
+        product.chpl, product.chpl_etag = None, None          # nowe źródło: dokument pobierzemy od nowa
+        if url and product.status == NO_CHPL:
+            product.status = PENDING
+        elif not url and not product.manual:
+            product.status, product.review_reason, product.excipients = NO_CHPL, None, []
+    db.session.commit()
 
 
 # --- przebieg importu ------------------------------------------------------------------
@@ -333,8 +393,15 @@ def run_import(limit: int | None = None, with_chpl: bool = True, csv_path: Path 
         progress(f"Rejestr: {reg['leki']} leków ({reg['leki_nowe']} nowych, {reg['leki_bez_chpl']} bez ChPL)")
 
         if with_chpl:
+            try:
+                sync_ema(client, stats)
+                progress(f"EMA: {stats['ema_dopasowane']} leków centralnych z informacją o produkcie")
+            except (requests.RequestException, ValueError) as exc:   # brak EMA nie zatrzymuje importu
+                stats["ema_blad"] = str(exc)[:200]
+                db.session.rollback()
             tables = tables_from_db()
-            todo = (Product.query.filter(Product.active.is_(True), Product.chpl_url.isnot(None),
+            todo = (Product.query.filter(Product.active.is_(True),
+                                         or_(Product.chpl_url.isnot(None), Product.ema_url.isnot(None)),
                                          Product.id.in_(seen))
                     .order_by(Product.chpl_checked_at.is_(None).desc(), Product.chpl_checked_at).all())
             for n, product in enumerate(todo, 1):

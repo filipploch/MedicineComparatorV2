@@ -35,8 +35,11 @@ class Product(db.Model):
     registry_number = db.Column(db.String(50))
     atc = db.Column(db.String(20))
     procedure = db.Column(db.String(10))                          # NAR, DCP, MRP, CEN (EMA), IR (import równoległy)
-    chpl_url = db.Column(db.String(300))                          # brak = rejestr nie udostępnia ChPL
+    chpl_url = db.Column(db.String(300))                          # ChPL z rejestru; brak = rejestr go nie udostępnia
     leaflet_url = db.Column(db.String(300))
+    eu_numbers = db.Column(db.JSON, default=list)                 # numery pozwoleń EU opakowań (leki centralne)
+    ema_url = db.Column(db.String(300))                           # informacja o produkcie EMA (PL), gdy brak ChPL w RPL
+    ema_product_number = db.Column(db.String(30))                 # np. EMEA/H/C/000141
     group_key = db.Column(db.String(600), index=True)             # klucz odpowiedników
     active = db.Column(db.Boolean, default=True, nullable=False)  # znika z RPL -> False
 
@@ -53,6 +56,15 @@ class Product(db.Model):
     chpl_checked_at = db.Column(db.DateTime(timezone=True))
 
     gtins = db.relationship("Gtin", back_populates="product", cascade="all, delete-orphan", order_by="Gtin.code")
+
+    @property
+    def source_url(self) -> str | None:
+        """Dokument, z którego pochodzi skład: ChPL z rejestru, a gdy go nie ma, informacja o produkcie EMA."""
+        return self.chpl_url or self.ema_url
+
+    @property
+    def source(self) -> str | None:
+        return "RPL" if self.chpl_url else ("EMA" if self.ema_url else None)
 
     def equivalents(self):
         if not self.group_key:

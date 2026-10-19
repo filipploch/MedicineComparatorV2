@@ -13,6 +13,12 @@ i punktu 6.1 Charakterystyk Produktów Leczniczych (ChPL).
    moce) jest parsowany raz (SHA-256). Przerwany import kontynuuje przy następnym uruchomieniu od leków sprawdzanych
    najdawniej. Leki, dla których rejestr nie udostępnia ChPL (dopuszczone centralnie przez EMA, import równoległy;
    w 2026 r. ok. 8,7 tys. z 20,3 tys.), dostają status „brak ChPL w rejestrze” z linkiem do ulotki, jeśli jest.
+   **Leki dopuszczone centralnie** (procedura CEN) dostają skład z polskiej informacji o produkcie Europejskiej
+   Agencji Leków: import pobiera listę leków EMA (JSON, `EMA_MEDICINES_URL`), dopasowuje je po nazwie i ustala
+   adres PDF (`…/pl/documents/product-information/<nazwa>-epar-product-information_pl.pdf`). Dokument EMA zawiera
+   osobną charakterystykę dla każdej mocy; lek dostaje tę, której punkt 8 wymienia numery pozwoleń EU jego opakowań
+   (są w kolumnie „Opakowanie” rejestru). Gdy numery się nie zgadzają, lek trafia do kolejki zamiast dostać
+   cudzy skład. Przy każdym leku strona podaje źródło składu (RPL albo EMA) z linkiem do dokumentu.
 2. **Parser** (`app/chpl_parser.py`) wycina punkt 6.1, pomija etykiety („Rdzeń tabletki”, „Korpus:”), rozbija
    mieszanki na składniki, tłumaczy numery E, sprowadza nazwy do słownika i przypisuje skład do konkretnej mocy
    („[Tylko dla 20 mg]”, „267 mg tabletka”).

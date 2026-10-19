@@ -1,0 +1,65 @@
+ANEKS I
+CHARAKTERYSTYKA PRODUKTU LECZNICZEGO
+UWAGA: dokument testowy o układzie polskiej informacji o produkcie EMA (szablon QRD).
+Skład substancji pomocniczych jest przykładowy i nie opisuje rzeczywistego leku.
+
+1. NAZWA PRODUKTU LECZNICZEGO
+Aprovel 75 mg tabletki
+2. SKŁAD JAKOŚCIOWY I ILOŚCIOWY
+Każda tabletka zawiera 75 mg irbesartanu.
+Pełny wykaz substancji pomocniczych, patrz punkt 6.1.
+6. DANE FARMACEUTYCZNE
+6.1 Wykaz substancji pomocniczych
+Celuloza mikrokrystaliczna
+Kroskarmeloza sodowa
+Laktoza jednowodna
+Magnezu stearynian
+6.2 Niezgodności farmaceutyczne
+Nie dotyczy.
+7. PODMIOT ODPOWIEDZIALNY POSIADAJĄCY POZWOLENIE NA DOPUSZCZENIE DO OBROTU
+Przykładowy podmiot
+8. NUMER(Y) POZWOLENIA NA DOPUSZCZENIE DO OBROTU
+EU/1/97/046/001-003
+EU/1/97/046/010
+1. NAZWA PRODUKTU LECZNICZEGO
+Aprovel 150 mg tabletki
+2. SKŁAD JAKOŚCIOWY I ILOŚCIOWY
+Każda tabletka zawiera 150 mg irbesartanu.
+6. DANE FARMACEUTYCZNE
+6.1 Wykaz substancji pomocniczych
+Celuloza mikrokrystaliczna
+Kroskarmeloza sodowa
+Laktoza jednowodna
+Magnezu stearynian
+Krzemionka koloidalna bezwodna
+6.2 Niezgodności farmaceutyczne
+Nie dotyczy.
+8. NUMER(Y) POZWOLENIA NA DOPUSZCZENIE DO OBROTU
+EU/1/97/046/004 – 006
+EU/1/97/046/011
+EU/1/97/046/014
+1. NAZWA PRODUKTU LECZNICZEGO
+Aprovel 300 mg tabletki
+6.1 Wykaz substancji pomocniczych
+Celuloza mikrokrystaliczna
+Kroskarmeloza sodowa
+Laktoza jednowodna
+Magnezu stearynian
+Hypromeloza
+6.2 Niezgodności farmaceutyczne
+Nie dotyczy.
+8. NUMER(Y) POZWOLENIA NA DOPUSZCZENIE DO OBROTU
+EU/1/97/046/007-009
+EU/1/97/046/012
+ANEKS II
+A. WYTWÓRCA ODPOWIEDZIALNY ZA ZWOLNIENIE SERII
+ANEKS III
+OZNAKOWANIE OPAKOWAŃ I ULOTKA
+1. NAZWA PRODUKTU LECZNICZEGO
+Aprovel 150 mg tabletki
+6.1 Wykaz substancji pomocniczych
+Talk
+6.2 Niezgodności farmaceutyczne
+B. ULOTKA DLA PACJENTA
+6. Zawartość opakowania i inne informacje
+Pozostałe składniki to: talk.

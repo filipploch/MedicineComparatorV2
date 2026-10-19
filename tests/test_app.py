@@ -1,6 +1,7 @@
 """Przebieg całości bez sieci: import (z udawanym serwerem RPL), strony publiczne, panel redaktora."""
 import csv
 import io
+import json
 
 import pytest
 
@@ -11,6 +12,13 @@ from app.models import NO_CHPL, OK, REVIEW, ImportRun, Product, User
 from .conftest import FIXTURES
 
 DEMO_CSV = (FIXTURES / "rejestr_demo.csv").read_text(encoding="utf-8")
+EMA_TEXT = (FIXTURES / "ema_informacja_o_produkcie_TEST.txt").read_text(encoding="utf-8")
+EMA_MEDICINES = {"meta": {"total_records": 2}, "data": [
+    {"category": "Human", "name_of_medicine": "Aprovel", "ema_product_number": "EMEA/H/C/000141",
+     "medicine_status": "Authorised", "medicine_url": "https://www.ema.europa.eu/en/medicines/human/EPAR/aprovel"},
+    {"category": "Human", "name_of_medicine": "Withdrawn Example", "ema_product_number": "EMEA/H/C/000001",
+     "medicine_status": "Withdrawn", "medicine_url": "https://www.ema.europa.eu/en/medicines/human/EPAR/withdrawn"},
+]}
 IBUPROM, MIG, NUROFEN, APROVEL = 11104, 19752, 9487, "Aprovel"   # id z adresów ChPL w rejestrze
 
 
@@ -60,9 +68,18 @@ class FakeRPL:
 
     def __init__(self, sections):
         self.registry = csv_with([IBUPROM, MIG, NUROFEN, APROVEL])
-        self.files = {IBUPROM: sections["11104"], MIG: sections["mig_400"], NUROFEN: sections["nurofen_forte"]}
+        self.files = {IBUPROM: sections["11104"], MIG: sections["mig_400"], NUROFEN: sections["nurofen_forte"],
+                      "aprovel": EMA_TEXT}
         self.versions = {k: "v1" for k in self.files}
+        self.ema = json.loads(json.dumps(EMA_MEDICINES))
         self.downloads = 0
+
+    @staticmethod
+    def key(url):
+        """Plik ChPL z RPL (.../11104/characteristic) albo informacja o produkcie EMA (.../aprovel-epar-...)."""
+        if "/product-information/" in url:
+            return url.rsplit("/", 1)[-1].split("-epar-")[0]
+        return int(url.split("/")[-2])
 
     def client(self, delay):
         fake = self
@@ -71,12 +88,17 @@ class FakeRPL:
             def get(self, url, **kw):
                 if url.endswith("get-csv"):
                     return FakeResponse(content=fake.registry.encode("utf-8"))
+                if "medicines_json" in url:
+                    return FakeResponse(content=json.dumps(fake.ema).encode("utf-8"))
+                key = fake.key(url)
+                if key not in fake.files:
+                    return FakeResponse(status=404)
                 fake.downloads += 1
-                pid = int(url.split("/")[-2])
-                return FakeResponse(content=fake.files[pid].encode("utf-8"), headers=fake.headers(pid))
+                return FakeResponse(content=fake.files[key].encode("utf-8"), headers=fake.headers(key))
 
             def head(self, url):
-                return FakeResponse(headers=fake.headers(int(url.split("/")[-2])))
+                key = fake.key(url)
+                return FakeResponse(headers=fake.headers(key)) if key in fake.files else FakeResponse(status=404)
         return Client()
 
     def headers(self, pid):
@@ -88,25 +110,32 @@ def rpl(app, sections, monkeypatch):
     fake = FakeRPL(sections)
     monkeypatch.setattr(importer, "Client", fake.client)
     wrap = "6.1 Wykaz substancji pomocniczych\n{}\n6.2 Niezgodności farmaceutyczne\n" + "x" * 300
-    monkeypatch.setattr(importer, "parse_pdf",
-                        lambda content, tables: (parse_text(wrap.format(content.decode("utf-8")), tables), ""))
+
+    def fake_parse(content, tables):
+        text = content.decode("utf-8")
+        return parse_text(text if text.startswith("ANEKS I") else wrap.format(text), tables), ""
+    monkeypatch.setattr(importer, "parse_pdf", fake_parse)
     return fake
 
 
 def test_import_and_change_detection(rpl):
     run = importer.run_import()
     assert run.status == "ok", run.error
-    assert run.stats["leki"] == 4 and run.stats["leki_bez_chpl"] == 1 and run.stats["chpl_nowe"] == 3
+    assert run.stats["leki"] == 4 and run.stats["leki_bez_chpl"] == 1 and run.stats["chpl_nowe"] == 4
+    assert run.stats["ema_dopasowane"] == 1
     assert status(IBUPROM)[0] == OK and "sacharoza" in status(IBUPROM)[1]
     assert status(MIG)[0] == OK
     assert status(NUROFEN)[0] == REVIEW          # Nurofen: "tusz Opacode ..." spoza słownika
-    assert status(APROVEL)[0] == NO_CHPL and prod(APROVEL).procedure == "CEN"
+    # Aprovel 150 mg: brak ChPL w rejestrze, skład z informacji o produkcie EMA, część wskazana numerami EU
+    assert prod(APROVEL).source == "EMA" and prod(APROVEL).ema_product_number == "EMEA/H/C/000141"
+    assert status(APROVEL)[0] == OK and "krzemionka koloidalna bezwodna" in status(APROVEL)[1]
+    assert "hypromeloza" not in status(APROVEL)[1]
     assert prod(IBUPROM).group_key == prod(NUROFEN).group_key
     assert {g.code for g in prod(MIG).gtins} == {"05909990657964", "05909990657971", "05909990657988"}
 
     downloads = rpl.downloads
     run = importer.run_import()                 # nic się nie zmieniło: same zapytania HEAD
-    assert rpl.downloads == downloads and run.stats["chpl_bez_zmian"] == 3
+    assert rpl.downloads == downloads and run.stats["chpl_bez_zmian"] == 4
 
     rpl.versions[MIG] = "v2"                    # nowa wersja ChPL MIG
     rpl.files[MIG] += "\nSacharoza"
@@ -160,7 +189,11 @@ def test_public_pages(rpl, client):
     assert 'class="differs"' in page             # np. sacharoza jest w Ibuprom Max, a nie w MIG
     assert "skład w trakcie weryfikacji" in page   # Nurofen jeszcze w kolejce
     page = client.get(f"/lek/{prod(APROVEL).id}").get_data(as_text=True)
-    assert "Europejską Agencję Leków" in page and "ema.europa.eu" in page
+    assert "Europejską Agencję Leków" in page and "aprovel-epar-product-information_pl.pdf" in page
+    page = client.get(f"/lek/{prod(IBUPROM).id}").get_data(as_text=True)
+    assert "Źródło składu" in page and "Rejestr Produktów Leczniczych" in page
+    compare = client.get(f"/lek/{prod(IBUPROM).id}/porownanie").get_data(as_text=True)
+    assert "Źródło składu" in compare
     assert client.get("/lek/1").status_code == 404
 
 
@@ -236,3 +269,30 @@ def test_suggestions(app, client):
     names = client.get("/api/podpowiedzi?q=nur").get_json()
     assert names[0] == "Nurofen dla dzieci o smaku truskawkowym" or names[0] == "Nurofen Forte"
     assert all("nur" in n.lower() for n in names)
+
+
+def test_ema_not_matched_or_wrong_document(rpl):
+    rpl.ema["data"] = []                                    # brak leku w EMA: zostaje "brak ChPL"
+    importer.run_import()
+    assert status(APROVEL)[0] == NO_CHPL and prod(APROVEL).ema_url is None
+
+    rpl.ema = json.loads(json.dumps(EMA_MEDICINES))         # dokument EMA z numerami innego leku
+    rpl.files["aprovel"] = EMA_TEXT.replace("EU/1/97/046", "EU/1/99/999")
+    importer.run_import()
+    st, _ = status(APROVEL)
+    assert st == REVIEW and "numery pozwoleń EU" in prod(APROVEL).review_reason
+
+
+def test_ema_failure_does_not_stop_import(rpl, monkeypatch):
+    rpl.ema = "to nie jest JSON"
+    run = importer.run_import()
+    assert run.status == "ok" and "ema_blad" in run.stats and status(IBUPROM)[0] == OK
+
+
+def test_unmatched_central_and_parallel_import_pages(app, client):
+    load_demo(app)
+    ir = Product.query.filter_by(procedure="IR").first()
+    page = client.get(f"/lek/{ir.id}").get_data(as_text=True)
+    assert "importu równoległego" in page and "Otwórz ulotkę" in page
+    page = client.get(f"/lek/{prod(APROVEL).id}").get_data(as_text=True)
+    assert "Europejską Agencję Leków" in page and "ema.europa.eu" in page

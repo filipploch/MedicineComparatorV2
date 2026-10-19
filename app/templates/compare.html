@@ -36,6 +36,15 @@
     <tr><td colspan="{{ products|length + 1 }}">Brak danych do porównania.</td></tr>
   {% endfor %}
   </tbody>
+  <tfoot>
+    <tr><td class="sticky muted">Źródło składu</td>
+      {% for g in products %}
+        <td class="mark muted">{% if g.source_url %}<a href="{{ g.source_url }}" rel="noopener"
+          title="Charakterystyka Produktu Leczniczego">{{ 'EMA' if g.source == 'EMA' else 'RPL' }}</a>{% if g.manual %}, ręcznie{% endif %}
+          {%- else %}—{% endif %}</td>
+      {% endfor %}
+    </tr>
+  </tfoot>
 </table>
 </div>
 {% endblock %}

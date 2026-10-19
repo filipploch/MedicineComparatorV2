@@ -147,6 +147,10 @@ class Result:
     brak_substancji: bool = False      # ChPL deklaruje "Nie zawiera"
     dawki_z_naglowkow: list[str] = field(default_factory=list)
     nieznane: list[str] = field(default_factory=list)
+    eu: list[str] = field(default_factory=list)          # numery pozwoleń EU z punktu 8 (leki centralne)
+    # Dokument z kilkoma charakterystykami (np. informacja o produkcie EMA dla kilku mocy):
+    # [{"nazwa": linia z punktu 1, "eu": [...], "surowy_6_1": "...", "wynik": {...}}]
+    czesci: list[dict] = field(default_factory=list)
     surowy_6_1: str = ""
 
     def flag(self, reason: str) -> None:
@@ -161,7 +165,7 @@ class Result:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Result":
-        d = dict(d)
+        d = {k: v for k, v in d.items() if k in cls.__dataclass_fields__}
         d["substancje"] = [Excipient(**e) for e in d.get("substancje", [])]
         return cls(**d)
 
@@ -366,21 +370,120 @@ def parse_section(section: str, tables: Tables) -> Result:
     return result
 
 
-def parse_text(text: str, tables: Tables) -> Result:
-    """Parsuje cały tekst ChPL."""
-    if len(text.strip()) < MIN_TEXT_CHARS:
-        r = Result()
-        r.flag(NO_TEXT)
-        return r
+# --- dokumenty z kilkoma charakterystykami (EMA) ------------------------------------------
+RE_ANNEX_II = re.compile(r"^[ \t]*ANEKS[ \t]+II\b", re.M)
+RE_NAME_HEADER = re.compile(r"^[ \t]*1\.?[ \t]+NAZWA[ \t]+PRODUKTU[ \t]+LECZNICZEGO[^\n]*\n", re.M)
+RE_EU = re.compile(r"EU/(\d)/(\d{2})/(\d{3,4})/(\d{3})"
+                   r"(?:\s*[-–]\s*(?:EU/\d/\d{2}/\d{3,4}/)?(\d{3})(?!\d))?")
+
+
+def eu_numbers(text: str) -> list[str]:
+    """Numery pozwoleń EU, z rozwinięciem zakresów: "EU/1/97/046/001-003" -> 001, 002, 003."""
+    out: list[str] = []
+    for m in RE_EU.finditer(text):
+        base = f"EU/{m.group(1)}/{m.group(2)}/{m.group(3)}/"
+        first = int(m.group(4))
+        last = int(m.group(5)) if m.group(5) and int(m.group(5)) >= first and int(m.group(5)) - first < 200 else first
+        out.extend(f"{base}{n:03d}" for n in range(first, last + 1))
+    return list(dict.fromkeys(out))
+
+
+def eu_base(number: str) -> str:
+    """"EU/1/97/046/004" -> "EU/1/97/046" (pozwolenie bez numeru opakowania)."""
+    return number.rsplit("/", 1)[0]
+
+
+def split_smpc(text: str) -> list[str]:
+    """Dzieli tekst na charakterystyki. W informacji o produkcie EMA bierze tylko Aneks I
+    (dalej są etykiety, które też mają punkt "1. Nazwa produktu leczniczego")."""
+    m = RE_ANNEX_II.search(text)
+    body = text[:m.start()] if m else text
+    starts = [h.start() for h in RE_NAME_HEADER.finditer(body)]
+    if len(starts) <= 1:
+        return [body]
+    return [body[a:b] for a, b in zip(starts, starts[1:] + [len(body)])]
+
+
+def _parse_part(text: str, tables: Tables) -> Result:
     section, has_end = cut_section(text)
     if not section.strip():
         r = Result()
         r.flag(NO_SECTION)
+    else:
+        r = parse_section(section, tables)
+        if not has_end:
+            r.flag(NO_SECTION_END)
+    r.eu = eu_numbers(text)
+    return r
+
+
+def _part_name(text: str) -> str:
+    m = RE_NAME_HEADER.search(text)
+    rest = text[m.end():] if m else text
+    return next((l.strip() for l in rest.splitlines() if l.strip()), "")[:200]
+
+
+def _combine(parts: list[tuple[str, Result]]) -> Result:
+    top = Result()
+    for name, r in parts:
+        top.czesci.append({"nazwa": name, "eu": r.eu, "surowy_6_1": r.surowy_6_1, "wynik": r.to_dict()})
+        for reason in r.powody:
+            top.flag(reason)
+        top.nieznane.extend(n for n in r.nieznane if n not in top.nieznane)
+        top.eu.extend(e for e in r.eu if e not in top.eu)
+    top.surowy_6_1 = "\n\n".join(f"[{name}]\n{r.surowy_6_1}" for name, r in parts)
+    return top
+
+
+def parse_text(text: str, tables: Tables) -> Result:
+    """Parsuje cały tekst ChPL (albo informacji o produkcie EMA z kilkoma charakterystykami)."""
+    if len(text.strip()) < MIN_TEXT_CHARS:
+        r = Result()
+        r.flag(NO_TEXT)
         return r
-    result = parse_section(section, tables)
-    if not has_end:
-        result.flag(NO_SECTION_END)
-    return result
+    parts = split_smpc(text)
+    if len(parts) == 1:
+        return _parse_part(parts[0], tables)
+    return _combine([(_part_name(p), _parse_part(p, tables)) for p in parts])
+
+
+def reparse(previous: dict, raw_section: str | None, tables: Tables) -> Result:
+    """Ponowne parsowanie zapisanych punktów 6.1 po zmianach w słownikach (bez pobierania PDF)."""
+    prev = Result.from_dict(previous or {})
+    if prev.czesci:
+        parts = []
+        for part in prev.czesci:
+            old = Result.from_dict(part.get("wynik", {}))
+            r = parse_section(part["surowy_6_1"], tables) if part.get("surowy_6_1") else old
+            for keep in (NO_SECTION, NO_SECTION_END):
+                if keep in old.powody:
+                    r.flag(keep)
+            r.eu = part.get("eu", [])
+            parts.append((part.get("nazwa", ""), r))
+        return _combine(parts)
+    r = parse_section(raw_section or "", tables)
+    if NO_SECTION_END in prev.powody:
+        r.flag(NO_SECTION_END)
+    r.eu = prev.eu
+    return r
+
+
+def wybierz_czesc(result: Result, product_eu: list[str], moc: str | None) -> Result | None:
+    """Charakterystyka z dokumentu właściwa dla leku: po numerach EU jego opakowań,
+    a gdy ich brak, po mocy w nazwie z punktu 1. None = nie da się wskazać jednoznacznie."""
+    if not result.czesci:
+        return result
+    wanted = set(product_eu or [])
+    by_eu = [p for p in result.czesci if wanted & set(p.get("eu", []))]
+    if len(by_eu) == 1:
+        return Result.from_dict(by_eu[0]["wynik"])
+    candidates = by_eu or result.czesci
+    d = norm_dose(moc or "")
+    by_power = [p for p in candidates
+                if d and re.search(rf"(?<![\d.]){re.escape(d)}", norm_dose(p.get("nazwa", "")))]
+    if len(by_power) == 1:
+        return Result.from_dict(by_power[0]["wynik"])
+    return None
 
 
 def parse_pdf(pdf: bytes | Path, tables: Tables) -> tuple[Result, str]:

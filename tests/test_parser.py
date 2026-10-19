@@ -108,3 +108,43 @@ def test_premix_from_dictionary(tables):
 def test_whole_text_errors(tables):
     assert NO_TEXT in parse_text("   ", tables).powody
     assert NO_SECTION in parse_text("Tekst bez punktu sześć " * 20, tables).powody
+
+
+# --- informacja o produkcie EMA: kilka charakterystyk w jednym dokumencie ---------------
+from pathlib import Path as _Path
+
+from app.chpl_parser import eu_numbers, parse_text as _parse_text, reparse, split_smpc, wybierz_czesc
+
+EMA_TEXT = (_Path(__file__).parent / "fixtures" / "ema_informacja_o_produkcie_TEST.txt").read_text(encoding="utf-8")
+
+
+def test_eu_number_ranges():
+    assert eu_numbers("EU/1/97/046/001-003, EU/1/97/046/010") == \
+        ["EU/1/97/046/001", "EU/1/97/046/002", "EU/1/97/046/003", "EU/1/97/046/010"]
+    assert eu_numbers("EU/1/97/046/004 – EU/1/97/046/006") == \
+        ["EU/1/97/046/004", "EU/1/97/046/005", "EU/1/97/046/006"]
+
+
+def test_ema_document_is_split_into_annex_i_parts(tables):
+    parts = split_smpc(EMA_TEXT)
+    assert len(parts) == 3                                    # etykiety z Aneksu III się nie liczą
+    r = _parse_text(EMA_TEXT, tables)
+    assert r.status == "OK" and [c["nazwa"] for c in r.czesci] == \
+        ["Aprovel 75 mg tabletki", "Aprovel 150 mg tabletki", "Aprovel 300 mg tabletki"]
+    assert "EU/1/97/046/005" in r.czesci[1]["eu"] and "EU/1/97/046/005" not in r.czesci[0]["eu"]
+
+
+def test_part_selected_by_eu_numbers_then_by_power(tables):
+    r = _parse_text(EMA_TEXT, tables)
+    by_eu = wybierz_czesc(r, ["EU/1/97/046/011"], "150 mg")
+    assert "krzemionka koloidalna bezwodna" in names(by_eu)
+    by_power = wybierz_czesc(r, [], "300 mg")                 # brak numerów EU: po mocy z punktu 1
+    assert "hypromeloza" in names(by_power)
+    assert wybierz_czesc(r, [], "30 mg") is None              # "30 mg" nie może trafić w "300 mg"
+
+
+def test_reparse_keeps_parts(tables):
+    r = _parse_text(EMA_TEXT, tables)
+    again = reparse(r.to_dict(), None, tables)
+    assert [c["nazwa"] for c in again.czesci] == [c["nazwa"] for c in r.czesci]
+    assert again.czesci[1]["eu"] == r.czesci[1]["eu"]

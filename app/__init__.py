@@ -22,6 +22,13 @@ def create_app(config: dict | None = None) -> Flask:
         RPL_CSV_URL=os.environ.get(
             "RPL_CSV_URL", "https://rejestry.ezdrowie.gov.pl/api/rpl/medicinal-products/public-pl-report/get-csv"),
         RPL_DELAY_SECONDS=float(os.environ.get("RPL_DELAY_SECONDS", 1.0)),
+        # Europejska Agencja Leków: lista leków (JSON, aktualizowany 2 razy dziennie) i polska informacja o produkcie
+        EMA_MEDICINES_URL=os.environ.get(
+            "EMA_MEDICINES_URL",
+            "https://www.ema.europa.eu/en/documents/report/medicines-output-medicines_json-report_en.json"),
+        EMA_PRODUCT_INFO_URL=os.environ.get(
+            "EMA_PRODUCT_INFO_URL",
+            "https://www.ema.europa.eu/pl/documents/product-information/{slug}-epar-product-information_pl.pdf"),
         # Znaki, które skaner lub użytkownik może dopisać przed kodem GTIN / Data Matrix
         SCAN_PREFIXES=os.environ.get("SCAN_PREFIXES", "@"),
     )

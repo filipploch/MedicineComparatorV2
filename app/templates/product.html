@@ -31,9 +31,13 @@
 {% else %}
   <p class="notice">Skład w trakcie weryfikacji. Do tego czasu sprawdź punkt 6.1 w ChPL.</p>
 {% endif %}
-{% if p.chpl %}
-  <p><a href="{{ p.chpl.source_url }}" rel="noopener">Charakterystyka Produktu Leczniczego (PDF)</a>
-    <span class="muted">· sprawdzono {{ p.chpl_checked_at.strftime('%d.%m.%Y') if p.chpl_checked_at else p.chpl.fetched_at.strftime('%d.%m.%Y') }}</span></p>
+{% if p.source_url %}
+  <p class="source muted">Źródło składu:
+    {% if p.manual %}wpisany przez redaktora na podstawie dokumentu{% endif %}
+    <a href="{{ p.source_url }}" rel="noopener">Charakterystyka Produktu Leczniczego (PDF)</a>,
+    {% if p.source == 'EMA' %}informacja o produkcie opublikowana przez Europejską Agencję Leków (ema.europa.eu)
+    {%- else %}Rejestr Produktów Leczniczych{% endif %}
+    {%- if p.chpl_checked_at %}, sprawdzono {{ p.chpl_checked_at.strftime('%d.%m.%Y') }}{% endif %}.</p>
 {% endif %}
 
 <h2>Odpowiedniki ({{ equivalents|length }})</h2>
