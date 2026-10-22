@@ -3,7 +3,7 @@
 {% from "admin/_resolve.html" import resolve_form, excipient_datalist %}
 {% block title %}ChPL {{ doc.file_name }}{% endblock %}
 {% block content %}
-<h1>ChPL {{ doc.file_name or doc.sha256[:12] }}</h1>
+<h1>{{ 'Ulotka' if doc.kind == 'ulotka' else 'ChPL' }} {{ doc.file_name or doc.sha256[:12] }}</h1>
 <p><a href="{{ doc.source_url }}" rel="noopener">Otwórz PDF</a> · pobrano {{ doc.fetched_at.strftime('%d.%m.%Y') }}
   · {{ (doc.size or 0) // 1024 }} kB</p>
 {% for r in result.powody %}<span class="badge weryfikacja">{{ r|reason }}</span> {% endfor %}

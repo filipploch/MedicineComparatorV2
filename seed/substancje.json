@@ -66,7 +66,9 @@
   "krzemionka koloidalna bezwodna": [
     "krzemionka koloidalna",
     "krzemu dwutlenek koloidalny",
-    "krzemionka koloidalna uwodniona"
+    "krzemionka koloidalna uwodniona",
+    "dwutlenek krzemu",
+    "krzemu dwutlenek"
   ],
   "wapnia wodorofosforan": [
     "wapnia wodorofosforan dwuwodny",
@@ -92,9 +94,15 @@
   "alkohol poliwinylowy": [],
   "tytanu dwutlenek": [],
   "żelaza tlenki": [],
-  "żelaza tlenek żółty": [],
-  "żelaza tlenek czerwony": [],
-  "żelaza tlenek czarny": [],
+  "żelaza tlenek żółty": [
+    "tlenek żelaza żółty"
+  ],
+  "żelaza tlenek czerwony": [
+    "tlenek żelaza czerwony"
+  ],
+  "żelaza tlenek czarny": [
+    "tlenek żelaza czarny"
+  ],
   "wosk Carnauba": [
     "wosk carnauba"
   ],
@@ -104,7 +112,10 @@
   "szelak": [],
   "guma arabska": [],
   "żelatyna": [],
-  "triacetyna": [],
+  "triacetyna": [
+    "trioctan gliceryny",
+    "glicerolu trioctan"
+  ],
   "trietylu cytrynian": [],
   "kwas cytrynowy": [
     "kwas cytrynowy jednowodny",
@@ -113,17 +124,25 @@
   "sodu cytrynian": [
     "sodu cytrynian dwuwodny"
   ],
-  "sodu chlorek": [],
+  "sodu chlorek": [
+    "chlorek sodu"
+  ],
   "potasu chlorek": [],
-  "sodu wodorotlenek": [],
+  "sodu wodorotlenek": [
+    "wodorotlenek sodu"
+  ],
   "potasu wodorotlenek": [],
-  "amonu wodorotlenek": [],
+  "amonu wodorotlenek": [
+    "wodorotlenek amonowy",
+    "wodorotlenek amonu"
+  ],
   "kwas solny": [
     "kwas chlorowodorowy"
   ],
   "kwas siarkowy": [],
   "sodu węglan": [
-    "sodu węglan bezwodny"
+    "sodu węglan bezwodny",
+    "węglan sodu"
   ],
   "sodu wodorowęglan": [],
   "disodu fosforan": [
@@ -149,7 +168,12 @@
   "alkohol benzylowy": [],
   "butylohydroksytoluen": [],
   "butylohydroksyanizol": [],
-  "alfa-tokoferol": [],
+  "alfa-tokoferol": [
+    "rrr-α-tokoferol",
+    "all-rac-α-tokoferol",
+    "dl-alfa-tokoferol",
+    "tokoferol"
+  ],
   "sacharyna": [
     "sacharyna sodowa"
   ],
@@ -164,7 +188,10 @@
   "woda oczyszczona": [],
   "woda do wstrzykiwań": [],
   "tłuszcz stały": [],
-  "olej sojowy": [],
+  "olej sojowy": [
+    "olej sojowy oczyszczony",
+    "olej sojowy rafinowany"
+  ],
   "olej rycynowy": [],
   "parafina ciekła": [],
   "wazelina biała": [],
@@ -181,5 +208,29 @@
   "czerwień koszenilowa A": [],
   "czerwień Allura AC": [],
   "indygotyna": [],
-  "błękit brylantowy FCF": []
+  "błękit brylantowy FCF": [],
+  "lecytyna sojowa": [],
+  "lecytyna": [],
+  "fenoksyetanol": [],
+  "karbomer": [],
+  "poloksamer": [],
+  "alkohol cetostearylowy": [],
+  "alkohol cetylowy": [],
+  "alkohol stearylowy": [],
+  "polisorbat 20": [],
+  "polisorbat 60": [],
+  "sorbitanu stearynian": [],
+  "kwas benzoesowy": [],
+  "dimetykon": [],
+  "cyklometykon": [],
+  "wazelina żółta": [],
+  "lanolina": [
+    "tłuszcz z wełny owczej"
+  ],
+  "alkohol izopropylowy": [
+    "izopropanol"
+  ],
+  "arginina": [],
+  "glukoza ciekła": [],
+  "skwalan": []
 }

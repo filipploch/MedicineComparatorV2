@@ -34,9 +34,12 @@
 {% if p.source_url %}
   <p class="source muted">Źródło składu:
     {% if p.manual %}wpisany przez redaktora na podstawie dokumentu{% endif %}
-    <a href="{{ p.source_url }}" rel="noopener">Charakterystyka Produktu Leczniczego (PDF)</a>,
+    {% if p.source == 'ULOTKA' %}<a href="{{ p.source_url }}" rel="noopener">ulotka dla pacjenta (PDF)</a>, punkt 6,
+    Rejestr Produktów Leczniczych. Rejestr nie udostępnia ChPL tego leku
+    {%- if p.procedure == 'IR' %} (import równoległy){% endif %}, a ulotka bywa mniej szczegółowa
+    {%- else %}<a href="{{ p.source_url }}" rel="noopener">Charakterystyka Produktu Leczniczego (PDF)</a>,
     {% if p.source == 'EMA' %}informacja o produkcie opublikowana przez Europejską Agencję Leków (ema.europa.eu)
-    {%- else %}Rejestr Produktów Leczniczych{% endif %}
+    {%- else %}Rejestr Produktów Leczniczych{% endif %}{% endif %}
     {%- if p.chpl_checked_at %}, sprawdzono {{ p.chpl_checked_at.strftime('%d.%m.%Y') }}{% endif %}.</p>
 {% endif %}
 

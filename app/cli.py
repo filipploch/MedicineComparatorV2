@@ -100,18 +100,28 @@ def register_cli(app: Flask) -> None:
     @app.cli.command("load-chpl")
     @click.argument("folder", type=click.Path(exists=True, file_okay=False, path_type=Path))
     def load_chpl(folder: Path):
-        """Wczytuje lokalne pliki Charakterystyka-<id>-....pdf, gdzie <id> to numer z adresu ChPL w rejestrze."""
+        """Wczytuje lokalne pliki: Charakterystyka-<id>-....pdf (<id> z adresu ChPL w rejestrze)
+        oraz ulotki Ulotka-<nr>-<Identyfikator Produktu Leczniczego>.pdf (z pobierz_ulotki.py)."""
         from .importer import apply_composition, store_document, tables_from_db
         tables, n = tables_from_db(), 0
         for pdf in sorted(folder.glob("*.pdf")):
             m = re.match(r"Charakterystyka-(\d+)-", pdf.name)
-            products = Product.query.filter_by(rpl_id=int(m.group(1))).all() if m else []
+            u = re.match(r"Ulotka-\d+-(\d{9})\b", pdf.name)
+            if m:
+                products, kind = Product.query.filter_by(rpl_id=int(m.group(1))).all(), "chpl"
+            elif u:
+                products, kind = [p for p in [db.session.get(Product, int(u.group(1)))] if p], "ulotka"
+            else:
+                products, kind = [], ""
             if not products:
                 click.echo(f"pominięto {pdf.name} (brak leku w bazie)")
                 continue
             for product in products:
-                doc = store_document(pdf.read_bytes(), product.chpl_url or "",
-                                     {"Content-Disposition": f'attachment; filename="{pdf.name}"'}, tables)
+                if kind == "ulotka" and product.document_kind != "ulotka":
+                    click.echo(f"pominięto {pdf.name} (lek ma ChPL, ulotka nie jest potrzebna)")
+                    continue
+                doc = store_document(pdf.read_bytes(), product.source_url or "",
+                                     {"Content-Disposition": f'attachment; filename="{pdf.name}"'}, tables, kind)
                 product.chpl = doc
                 apply_composition(product)
             n += 1

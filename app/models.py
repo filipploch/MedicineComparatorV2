@@ -59,12 +59,21 @@ class Product(db.Model):
 
     @property
     def source_url(self) -> str | None:
-        """Dokument, z którego pochodzi skład: ChPL z rejestru, a gdy go nie ma, informacja o produkcie EMA."""
-        return self.chpl_url or self.ema_url
+        """Dokument, z którego pochodzi skład: ChPL z rejestru, potem informacja o produkcie EMA,
+        a na końcu ulotka (punkt 6), gdy rejestr nie udostępnia ChPL."""
+        return self.chpl_url or self.ema_url or self.leaflet_url
 
     @property
     def source(self) -> str | None:
-        return "RPL" if self.chpl_url else ("EMA" if self.ema_url else None)
+        if self.chpl_url:
+            return "RPL"
+        if self.ema_url:
+            return "EMA"
+        return "ULOTKA" if self.leaflet_url else None
+
+    @property
+    def document_kind(self) -> str:
+        return "ulotka" if self.source == "ULOTKA" else "chpl"
 
     def equivalents(self):
         if not self.group_key:
@@ -86,6 +95,7 @@ class ChplDocument(db.Model):
     """Jeden plik ChPL; kilka rekordów (moce) może wskazywać ten sam plik."""
     id = db.Column(db.Integer, primary_key=True)
     sha256 = db.Column(db.String(64), unique=True, nullable=False)
+    kind = db.Column(db.String(10), default="chpl")     # "chpl" (także informacja o produkcie EMA) albo "ulotka"
     file_name = db.Column(db.String(300))         # z nagłówka Content-Disposition, jeśli jest
     size = db.Column(db.Integer)
     source_url = db.Column(db.String(500))        # link do PDF dla redaktora

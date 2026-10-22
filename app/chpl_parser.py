@@ -36,6 +36,8 @@ UNKNOWN_SUBSTANCE = "NIEZNANA_SUBSTANCJA"
 UNKNOWN_LABEL = "NIEZNANA_ETYKIETA"
 UNKNOWN_E = "NIEZNANY_NUMER_E"
 EMPTY = "PUSTA_LISTA"
+NO_LEAFLET_SECTION = "NIE_ZNALEZIONO_PUNKTU_6_ULOTKI"
+NO_EXCIPIENT_LIST = "ULOTKA_BEZ_LISTY_SUBSTANCJI_POMOCNICZYCH"
 
 REASON_LABELS = {
     NO_TEXT: "PDF bez warstwy tekstowej (skan)",
@@ -46,6 +48,8 @@ REASON_LABELS = {
     UNKNOWN_LABEL: "nieznana etykieta",
     UNKNOWN_E: "nieznany numer E",
     EMPTY: "pusta lista substancji",
+    NO_LEAFLET_SECTION: "nie znaleziono w ulotce części „Co zawiera lek”",
+    NO_EXCIPIENT_LIST: "ulotka nie wymienia osobno substancji pomocniczych",
     "MOC_NIEDOPASOWANA": "moc leku nie występuje w nagłówkach ChPL",
 }
 
@@ -63,7 +67,11 @@ RE_NOTE = re.compile(r"\((?:do|w celu)\s+(?:ustalenia|korekty|regulacji|dostosow
 RE_CONTAINS = re.compile(r"^(?P<name>.*?)\s*\(?\s*(?:zawierając\w*|zawiera)\s+(?P<list>[^()]*)\)?\s*$", re.I)
 RE_INLINE_LABEL = re.compile(r"^(?P<label>[^,:()]{1,60}(?:\([^()]*\))?)\s*:\s*(?P<rest>.*)$")
 RE_NONE = re.compile(r"^(nie zawiera|brak|nie dotyczy)\b", re.I)
-RE_GRADE = re.compile(r"(?:\s+(?:typ\s+\w+|k[\s-]?\d+|\d+(?:[.,]\d+)?\s*(?:cp|mpas|mpa\.s)|ph-?\d+\S*|\d+))+$", re.I)
+RE_GRADE = re.compile(r"(?:\s+(?:typ\s+\w+|k[\s-]?\d+|\d+(?:[.,]\d+)?\s*(?:cp|mpas|mpa\.s)|ph-?\d+\S*|\d+/\d+|\d+(?:\s*[a-z])?))+$", re.I)
+# Same określenia, które po podziale po przecinkach należą do poprzedniej nazwy ("skrobia żelowana, kukurydziana")
+MODIFIERS = {"kukurydziana", "ziemniaczana", "pszenna", "ryżowa", "grochowa", "bezwodna", "bezwodny", "jednowodna",
+             "jednowodny", "dwuwodny", "dwuwodna", "oczyszczona", "oczyszczony", "częściowo odwodniony",
+             "częściowo odwodniona", "niekrystalizujący", "krystalizujący", "rafinowany", "rafinowana"}
 FORM_WORDS = re.compile(r"\b(tabletk\w*|kapsuł\w*|powlekan\w*|drażowan\w*|o\s+mocy|moc\w*|dawk\w*|dla)\b", re.I)
 
 
@@ -118,6 +126,11 @@ class Tables:
 
     def is_label(self, text: str) -> bool:
         return norm_key(text) in self.ignored
+
+    def is_label_prefix(self, text: str) -> bool:
+        """Etykieta z dwukropkiem, która zaczyna się od znanej: "otoczka tabletki powlekanej", "otoczka opadry ii"."""
+        key = norm_key(text)
+        return key in self.ignored or any(key.startswith(label + " ") for label in self.ignored)
 
 
 def read_seed(folder: Path):
@@ -212,7 +225,8 @@ def _unbalanced(line: str) -> bool:
 
 
 def _is_comma_list(line: str) -> bool:
-    return len(split_top_level(line)) >= 3
+    # od 2 pozycji; "Sorbitol ciekły, częściowo odwodniony" scala potem lista MODIFIERS
+    return len(split_top_level(line)) >= 2
 
 
 def logical_lines(section: str) -> list[str]:
@@ -324,7 +338,7 @@ def parse_section(section: str, tables: Tables) -> Result:
             doses = _dose_label(label, tables)
             if doses:
                 scope = set_scope(doses)
-            elif not tables.is_label(label):
+            elif not tables.is_label_prefix(label):
                 result.flag(UNKNOWN_LABEL)
                 result.nieznane.append(norm(label) + ":")
             text = m.group("rest")
@@ -345,7 +359,16 @@ def parse_section(section: str, tables: Tables) -> Result:
                 item_scope = d
                 text = text.replace(sm.group(0), " ")
 
-        pieces = split_top_level(text, ",;") if _is_comma_list(text) else [text]
+        pieces: list[str] = []
+        for piece in (split_top_level(text, ",;") if _is_comma_list(text) else [text]):
+            lm = RE_INLINE_LABEL.match(piece)
+            if lm and lm.group("rest").strip() and tables.is_label_prefix(lm.group("label")):
+                piece = lm.group("rest")
+            bare = norm(re.sub(r"\([^()]*\)", " ", RE_E.sub(" ", piece)))
+            if pieces and (bare in MODIFIERS or bare.startswith(("roztwór", "roztwor"))):   # "sodu wodorotlenek, roztwór 10%"
+                pieces[-1] = f"{pieces[-1]} {piece}"
+            else:
+                pieces.append(piece)
         for piece in pieces:
             for sub in re.split(r"\s+oraz\s+", piece):
                 for comp in _split_components(sub):
@@ -486,8 +509,107 @@ def wybierz_czesc(result: Result, product_eu: list[str], moc: str | None) -> Res
     return None
 
 
-def parse_pdf(pdf: bytes | Path, tables: Tables) -> tuple[Result, str]:
-    """Zwraca (wynik, cały tekst PDF)."""
+# --- ulotka dla pacjenta, punkt 6 "Co zawiera lek X" -----------------------------------
+RE_LEAFLET_START = re.compile(r"^[ \t]*(?:6\.\d\.?[ \t]*)?Co[ \t]+zawiera\b[^\n]*$", re.I | re.M)
+RE_LEAFLET_END = re.compile(r"^[ \t]*(?:6\.\d\.?[ \t]*)?Jak[ \t]+wygląda\b", re.I | re.M)
+RE_LEAFLET_LEAD = re.compile(
+    r"(?:(?:Pozostałe|Inne)[ \t]+(?:składniki|substancje)(?:[ \t]+pomocnicze)?"
+    r"(?:[ \t]*\((?:substancje[ \t]+pomocnicze)\))?(?:[ \t]+leku)?(?:[ \t]+to)?"
+    r"|Substancje[ \t]+pomocnicze(?:[ \t]+to)?)[ \t]*:?", re.I)
+RE_LEAFLET_NONE = re.compile(r"nie[ \t]+zawiera[ \t]+(?:żadnych[ \t]+)?substancji[ \t]+pomocniczych", re.I)
+# Dopiski po liście: odesłania do punktu 2, osmolalność, zawartość etanolu itp.
+RE_LEAFLET_STOP = re.compile(r"^\(?\s*(?:patrz\b|lek\b.*\bzawiera\b|produkt\b.*\bzawiera\b|osmolalno|ph\s*[:≈~]"
+                             r"|wartość\s+ph|ekstrahent|substancj\w*\s+czynn)", re.I)
+RE_BULLET = re.compile(r"^[ \t]*[-‒–−•\uf0b7\u2022\u25aa\u25cf*]?[ \t]*(?=\S)", re.M)
+RE_FOOTNOTE_LINE = re.compile(r"^[ \t]*(\*+)[ \t]*([^:\n]+):[ \t]*(.*)$")
+RE_AMOUNT = re.compile(r"[ \t]*[–-][ \t]*\d+(?:[.,]\d+)?[ \t]*(?:mg|g|µg|mcg|ml)\b", re.I)
+
+
+def leaflet_section(text: str) -> tuple[str | None, str]:
+    """Wycina listę substancji pomocniczych z punktu 6 ulotki.
+    Zwraca (tekst listy albo None, kod powodu, gdy listy brak)."""
+    start = None
+    for m in RE_LEAFLET_START.finditer(text):
+        start = m                                    # ostatnie "Co zawiera" = punkt 6 (wcześniej bywa w spisie treści)
+    if start is None:
+        return None, NO_LEAFLET_SECTION
+    end = RE_LEAFLET_END.search(text, start.end())
+    block = text[start.end(): end.start() if end and end.start() - start.end() < MAX_SECTION_CHARS
+                 else start.end() + MAX_SECTION_CHARS]
+    lead = RE_LEAFLET_LEAD.search(block)
+    if lead is None:
+        return None, ("BRAK" if RE_LEAFLET_NONE.search(block) else NO_EXCIPIENT_LIST)
+    body = block[lead.end():]
+
+    # przypisy "* Aromat pomarańczowy: maltodekstryna, …" -> skład w nawiasie przy składniku z gwiazdką
+    notes: dict[str, str] = {}
+    kept: list[str] = []
+    current = None
+    for line in body.splitlines():
+        m = RE_FOOTNOTE_LINE.match(line)
+        if m:
+            current = m.group(1)
+            notes[current] = m.group(3).strip()
+        elif current and line.strip() and not RE_LEAFLET_STOP.match(line.strip()):
+            notes[current] += " " + line.strip()            # ciąg dalszy przypisu w następnej linii
+        else:
+            current = None
+            kept.append(line)
+    if notes:
+        body = "\n".join(kept)
+        notes = {k: re.sub(r"\s+", " ", v).strip(" .") for k, v in notes.items()}
+        for stars in sorted(notes, key=len, reverse=True):
+            body = re.sub(rf"(?<=[\w)])[ \t]?{re.escape(stars)}(?!\*)", f" ({notes[stars]})", body, count=1)
+
+    lines: list[str] = []
+    for line in RE_BULLET.sub("", RE_PAGE_LINE.sub("", body)).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if RE_LEAFLET_STOP.match(line):
+            break
+        prev = lines[-1] if lines else ""
+        # nazwa przełamana między liniami: poprzednia linia nie kończy się znakiem zamykającym,
+        # a jest częścią listy po przecinkach albo następna zaczyna się małą literą
+        if prev and (prev.endswith(",") or (not prev.endswith((".", ";", ":"))
+                                            and ("," in prev or line[:1].islower()))):
+            lines[-1] = f"{prev} {line}"
+        else:
+            lines.append(line)
+    out = []
+    for line in lines:
+        line = RE_AMOUNT.sub("", line).replace("[", "(").replace("]", ")")
+        line = re.sub(r"\s+lub\s+", ", ", line)                 # "sodu wodorotlenek lub kwas solny"
+        line = re.sub(r"(\(E[ \t]?\d{3,4}[a-z]?\))[ \t]+(?=[a-ząćęłńóśźż])", r"\1, ", line)  # brak przecinka po (E 551)
+        line = re.sub(r"\(([^()]*)\)", lambda m: "(" + re.sub(r"(?<!-)\s+i\s+", ", ", m.group(1)) + ")", line)
+        parts = split_top_level(line, ",")
+        if len(parts) >= 2:                                     # "…, glicerol, sodu wodorotlenek i woda do wstrzykiwań"
+            last = re.split(r"(?<!-)\s+i\s+", parts[-1])
+            if len(last) == 2 and "(" not in parts[-1]:
+                line = ", ".join(parts[:-1] + last)
+        out.extend(seg.strip() + ";" for seg in line.split(";") if seg.strip())   # "…; otoczka: …" -> osobne linie
+    return "\n".join(l.rstrip(";") if i == len(out) - 1 else l for i, l in enumerate(out)).strip(), ""
+
+
+def parse_leaflet(text: str, tables: Tables) -> Result:
+    """Substancje pomocnicze z punktu 6 ulotki (dla leków, których rejestr nie udostępnia ChPL)."""
+    if len(text.strip()) < MIN_TEXT_CHARS:
+        r = Result()
+        r.flag(NO_TEXT)
+        return r
+    body, reason = leaflet_section(text)
+    if body is None:
+        r = Result()
+        if reason == "BRAK":
+            r.brak_substancji = True
+        else:
+            r.flag(reason)
+        return r
+    return parse_section(body, tables)
+
+
+def parse_pdf(pdf: bytes | Path, tables: Tables, kind: str = "chpl") -> tuple[Result, str]:
+    """Zwraca (wynik, cały tekst PDF). kind: "chpl" (także informacja o produkcie EMA) albo "ulotka"."""
     try:
         text = extract_text(pdf)
     except Exception as exc:  # uszkodzony lub zaszyfrowany plik
@@ -495,7 +617,7 @@ def parse_pdf(pdf: bytes | Path, tables: Tables) -> tuple[Result, str]:
         r.flag(PDF_ERROR)
         r.nieznane.append(exc.__class__.__name__)
         return r, ""
-    return parse_text(text, tables), text
+    return (parse_leaflet(text, tables) if kind == "ulotka" else parse_text(text, tables)), text
 
 
 def skladniki_dla_mocy(result: Result, moc: str | None) -> list[Excipient] | None:

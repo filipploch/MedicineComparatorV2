@@ -19,6 +19,10 @@ i punktu 6.1 Charakterystyk Produktów Leczniczych (ChPL).
    osobną charakterystykę dla każdej mocy; lek dostaje tę, której punkt 8 wymienia numery pozwoleń EU jego opakowań
    (są w kolumnie „Opakowanie” rejestru). Gdy numery się nie zgadzają, lek trafia do kolejki zamiast dostać
    cudzy skład. Przy każdym leku strona podaje źródło składu (RPL albo EMA) z linkiem do dokumentu.
+   **Leki bez ChPL, ale z ulotką w rejestrze** (głównie import równoległy, w 2026 r. ok. 3,3 tys.) dostają skład
+   z punktu 6 ulotki („Pozostałe składniki to: …”): parser usuwa dopiski dla pacjenta, rozwija przypisy z gwiazdką,
+   ilości („– 44,9 mg”) i alternatywy („… lub …”), a dalej działa jak dla ChPL. Kolejność źródeł: ChPL z rejestru,
+   informacja o produkcie EMA, ulotka.
 2. **Parser** (`app/chpl_parser.py`) wycina punkt 6.1, pomija etykiety („Rdzeń tabletki”, „Korpus:”), rozbija
    mieszanki na składniki, tłumaczy numery E, sprowadza nazwy do słownika i przypisuje skład do konkretnej mocy
    („[Tylko dla 20 mg]”, „267 mg tabletka”).

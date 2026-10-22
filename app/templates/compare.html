@@ -40,7 +40,8 @@
     <tr><td class="sticky muted">Źródło składu</td>
       {% for g in products %}
         <td class="mark muted">{% if g.source_url %}<a href="{{ g.source_url }}" rel="noopener"
-          title="Charakterystyka Produktu Leczniczego">{{ 'EMA' if g.source == 'EMA' else 'RPL' }}</a>{% if g.manual %}, ręcznie{% endif %}
+          title="{{ 'Ulotka dla pacjenta' if g.source == 'ULOTKA' else 'Charakterystyka Produktu Leczniczego' }}">
+          {{- {'EMA': 'EMA', 'ULOTKA': 'ulotka'}.get(g.source, 'RPL') }}</a>{% if g.manual %}, ręcznie{% endif %}
           {%- else %}—{% endif %}</td>
       {% endfor %}
     </tr>

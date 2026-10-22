@@ -254,13 +254,13 @@ def apply_composition(product: Product, doc_changed: bool = False) -> None:
     product.status, product.review_reason = OK, None
 
 
-def store_document(content: bytes, url: str, headers, tables: Tables) -> ChplDocument:
+def store_document(content: bytes, url: str, headers, tables: Tables, kind: str = "chpl") -> ChplDocument:
     sha = hashlib.sha256(content).hexdigest()
     doc = ChplDocument.query.filter_by(sha256=sha).first()
     if doc is not None:
         return doc
-    result, _text = parse_pdf(content, tables)
-    doc = ChplDocument(sha256=sha, size=len(content), source_url=url, file_name=file_name(headers),
+    result, _text = parse_pdf(content, tables, kind)
+    doc = ChplDocument(sha256=sha, kind=kind, size=len(content), source_url=url, file_name=file_name(headers),
                        raw_section=result.surowy_6_1 or None, parse_status=result.status,
                        parse_result=result.to_dict())
     db.session.add(doc)
@@ -296,7 +296,7 @@ def check_chpl(product: Product, client: Client, tables: Tables, stats: dict) ->
         return
     r.raise_for_status()
     old_doc_id = product.chpl_id
-    doc = store_document(r.content, url, r.headers, tables)
+    doc = store_document(r.content, url, r.headers, tables, product.document_kind)
     product.chpl = doc
     product.chpl_etag = head_sig or signature(r.headers)
     changed = old_doc_id is not None and old_doc_id != doc.id
@@ -368,10 +368,12 @@ def sync_ema(client: Client, stats: dict) -> None:
             continue
         product.ema_url, product.ema_product_number = url, (hit or {}).get("number")
         product.chpl, product.chpl_etag = None, None          # nowe źródło: dokument pobierzemy od nowa
-        if url and product.status == NO_CHPL:
-            product.status = PENDING
-        elif not url and not product.manual:
+        if product.manual:
+            continue
+        if product.source_url is None:
             product.status, product.review_reason, product.excipients = NO_CHPL, None, []
+        else:                                                   # EMA albo, gdy dopasowanie zniknęło, ulotka
+            product.status = PENDING
     db.session.commit()
 
 
@@ -401,7 +403,8 @@ def run_import(limit: int | None = None, with_chpl: bool = True, csv_path: Path 
                 db.session.rollback()
             tables = tables_from_db()
             todo = (Product.query.filter(Product.active.is_(True),
-                                         or_(Product.chpl_url.isnot(None), Product.ema_url.isnot(None)),
+                                         or_(Product.chpl_url.isnot(None), Product.ema_url.isnot(None),
+                                             Product.leaflet_url.isnot(None)),
                                          Product.id.in_(seen))
                     .order_by(Product.chpl_checked_at.is_(None).desc(), Product.chpl_checked_at).all())
             for n, product in enumerate(todo, 1):

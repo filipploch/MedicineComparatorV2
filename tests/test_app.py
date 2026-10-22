@@ -2,11 +2,12 @@
 import csv
 import io
 import json
+import re
 
 import pytest
 
 from app import db, importer
-from app.chpl_parser import parse_text
+from app.chpl_parser import parse_leaflet, parse_text
 from app.models import NO_CHPL, OK, REVIEW, ImportRun, Product, User
 
 from .conftest import FIXTURES
@@ -20,13 +21,21 @@ EMA_MEDICINES = {"meta": {"total_records": 2}, "data": [
      "medicine_status": "Withdrawn", "medicine_url": "https://www.ema.europa.eu/en/medicines/human/EPAR/withdrawn"},
 ]}
 IBUPROM, MIG, NUROFEN, APROVEL = 11104, 19752, 9487, "Aprovel"   # id z adresów ChPL w rejestrze
+NUROFEN_IR = 46471     # import równoległy: w rejestrze tylko ulotka (id z adresu ulotki)
+LEAFLET_TEXT = ("ULOTKA DLA PACJENTA\n" + "tekst ulotki " * 20 + "\n6. Zawartość opakowania i inne informacje\n"
+                "Co zawiera lek Nurofen dla dzieci Forte\nSubstancją czynną leku jest ibuprofen.\n"
+                "Pozostałe składniki to: maltitol ciekły, glicerol, sodu benzoesan (E 211), kwas cytrynowy,\n"
+                "sodu cytrynian, sodu chlorek, sacharyna sodowa, guma ksantanowa, aromat truskawkowy*, woda oczyszczona.\n"
+                "* Aromat truskawkowy: glikol propylenowy, maltodekstryna.\n"
+                "Lek zawiera 1,95 g maltitolu w 5 ml.\nJak wygląda lek Nurofen dla dzieci Forte i co zawiera opakowanie\n")
 
 
 def csv_with(rpl_ids=None, change=None):
     """Fragment pliku demonstracyjnego: wybrane wiersze, ewentualnie ze zmienionymi polami."""
     rows = list(csv.DictReader(io.StringIO(DEMO_CSV), delimiter=";"))
     if rpl_ids is not None:
-        rows = [r for r in rows if any(f"/{i}/" in r["Charakterystyka"] for i in rpl_ids)
+        rows = [r for r in rows if any(f"/{i}/" in r["Charakterystyka"] + r["Ulotka importu równoległego"]
+                                       for i in rpl_ids)
                 or (APROVEL in rpl_ids and r["Nazwa Produktu Leczniczego"] == APROVEL)]
     for r in rows:
         for key, (rid, value) in (change or {}).items():
@@ -69,7 +78,7 @@ class FakeRPL:
     def __init__(self, sections):
         self.registry = csv_with([IBUPROM, MIG, NUROFEN, APROVEL])
         self.files = {IBUPROM: sections["11104"], MIG: sections["mig_400"], NUROFEN: sections["nurofen_forte"],
-                      "aprovel": EMA_TEXT}
+                      "aprovel": EMA_TEXT, NUROFEN_IR: LEAFLET_TEXT}
         self.versions = {k: "v1" for k in self.files}
         self.ema = json.loads(json.dumps(EMA_MEDICINES))
         self.downloads = 0
@@ -79,7 +88,7 @@ class FakeRPL:
         """Plik ChPL z RPL (.../11104/characteristic) albo informacja o produkcie EMA (.../aprovel-epar-...)."""
         if "/product-information/" in url:
             return url.rsplit("/", 1)[-1].split("-epar-")[0]
-        return int(url.split("/")[-2])
+        return int(re.search(r"/medicinal-products/(\d+)/", url).group(1))
 
     def client(self, delay):
         fake = self
@@ -111,8 +120,10 @@ def rpl(app, sections, monkeypatch):
     monkeypatch.setattr(importer, "Client", fake.client)
     wrap = "6.1 Wykaz substancji pomocniczych\n{}\n6.2 Niezgodności farmaceutyczne\n" + "x" * 300
 
-    def fake_parse(content, tables):
+    def fake_parse(content, tables, kind="chpl"):
         text = content.decode("utf-8")
+        if kind == "ulotka":
+            return parse_leaflet(text, tables), ""
         return parse_text(text if text.startswith("ANEKS I") else wrap.format(text), tables), ""
     monkeypatch.setattr(importer, "parse_pdf", fake_parse)
     return fake
@@ -292,7 +303,26 @@ def test_ema_failure_does_not_stop_import(rpl, monkeypatch):
 def test_unmatched_central_and_parallel_import_pages(app, client):
     load_demo(app)
     ir = Product.query.filter_by(procedure="IR").first()
+    assert ir.source == "ULOTKA" and ir.status != NO_CHPL      # import równoległy: skład z ulotki
     page = client.get(f"/lek/{ir.id}").get_data(as_text=True)
-    assert "importu równoległego" in page and "Otwórz ulotkę" in page
+    assert "ulotka dla pacjenta" in page and "import równoległy" in page
     page = client.get(f"/lek/{prod(APROVEL).id}").get_data(as_text=True)
     assert "Europejską Agencję Leków" in page and "ema.europa.eu" in page
+
+
+def test_parallel_import_composition_from_leaflet(rpl, client):
+    rpl.registry = csv_with([IBUPROM, NUROFEN_IR])
+    run = importer.run_import()
+    assert run.status == "ok", run.error
+    st, names = status(NUROFEN_IR)
+    assert st == REVIEW and prod(NUROFEN_IR).chpl.kind == "ulotka"   # "maltitol ciekły", "guma ksantanowa" spoza słownika
+    doc = prod(NUROFEN_IR).chpl
+    assert {"glicerol", "sodu benzoesan", "glikol propylenowy", "maltodekstryna"} <= {
+        e["nazwa"] for e in doc.parse_result["substancje"]}
+    login(client)
+    for name in ("maltitol ciekły", "guma ksantanowa"):
+        client.post("/admin/nieznane/rozwiaz", data={"name": name, "action": "substance", "canonical": name})
+    st, names = status(NUROFEN_IR)
+    assert st == OK and "maltitol ciekły" in names and "aromat truskawkowy" not in names
+    page = client.get(f"/lek/{prod(NUROFEN_IR).id}").get_data(as_text=True)
+    assert "ulotka dla pacjenta" in page

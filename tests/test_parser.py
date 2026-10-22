@@ -93,9 +93,9 @@ def test_older_comma_lists(tables, text, expected):
 
 
 def test_unknown_label_with_colon_is_skipped_and_flagged(tables):
-    r = parse_section("Warstwa wewnętrzna:\nTalk\nSacharoza", tables)
+    r = parse_section("Część dodatkowa:\nTalk\nSacharoza", tables)
     assert names(r) == {"talk", "sacharoza"}
-    assert "warstwa wewnętrzna:" in r.nieznane
+    assert "część dodatkowa:" in r.nieznane
 
 
 def test_premix_from_dictionary(tables):
@@ -148,3 +148,59 @@ def test_reparse_keeps_parts(tables):
     again = reparse(r.to_dict(), None, tables)
     assert [c["nazwa"] for c in again.czesci] == [c["nazwa"] for c in r.czesci]
     assert again.czesci[1]["eu"] == r.czesci[1]["eu"]
+
+
+
+# --- ulotki (punkt 6 "Co zawiera lek"), fragmenty prawdziwych ulotek ---------------------
+import json as _json
+
+from app.chpl_parser import NO_EXCIPIENT_LIST, NO_LEAFLET_SECTION, parse_leaflet
+
+LEAFLETS = _json.loads((_Path(__file__).parent / "fixtures" / "ulotki_punkt_6.json").read_text(encoding="utf-8"))
+PAD = "ULOTKA DLA PACJENTA\n" + "tekst ulotki " * 20 + "\n"
+
+
+def leaflet(key, tables):
+    return parse_leaflet(PAD + LEAFLETS[key], tables)
+
+
+@pytest.mark.parametrize("key, expected", [
+    ("concor_5", {"krzemionka koloidalna bezwodna", "magnezu stearynian", "krospowidon", "celuloza mikrokrystaliczna",
+                  "skrobia kukurydziana", "wapnia wodorofosforan", "żelaza tlenek żółty", "dimetykon", "makrogol",
+                  "tytanu dwutlenek", "hypromeloza"}),                       # "rdzeń tabletki: …; otoczka tabletki: …"
+    ("inhibace", {"laktoza", "skrobia kukurydziana", "hypromeloza", "talk", "sodu stearylofumaran", "tytanu dwutlenek",
+                  "żelaza tlenek czerwony"}),                                # "Inne składniki", "(Patrz punkt 2…)" na końcu
+    ("normatens", {"laktoza", "skrobia ziemniaczana", "powidon", "talk", "magnezu stearynian", "sacharoza",
+                   "guma arabska", "wosk pszczeli biały", "wosk Carnauba"}),  # ilości "– 44,9 mg", "wosk / Carnauba"
+    ("nootropil", {"makrogol", "krzemionka koloidalna bezwodna", "magnezu stearynian", "kroskarmeloza sodowa",
+                   "hypromeloza", "tytanu dwutlenek"}),                       # dwie mieszanki Opadry, nazwa przełamana
+    ("tanakan", {"celuloza mikrokrystaliczna", "kroskarmeloza sodowa", "magnezu stearynian", "makrogol",
+                 "hypromeloza", "żelaza tlenek czerwony"}),                   # jedna substancja w linii, "Otoczka:"
+    ("syrop_tymiankowy", {"amonu wodorotlenek", "etanol", "sacharoza", "woda oczyszczona"}),  # "syrop prosty (… i …)"
+])
+def test_leaflet_lists(tables, key, expected):
+    r = leaflet(key, tables)
+    assert r.status == "OK", (r.powody, r.nieznane)
+    assert names(r) == expected
+
+
+def test_leaflet_footnotes_and_alternatives(tables):
+    smecta = names(leaflet("smecta", tables))               # skład aromatów w przypisach "*" i "**"
+    assert {"maltodekstryna", "guma arabska", "triacetyna", "etanol", "lecytyna sojowa"} <= smecta
+    assert not any("*" in n for n in smecta)
+    differin = names(leaflet("differin_zel", tables))       # "sodu wodorotlenek lub kwas solny"
+    assert {"sodu wodorotlenek", "kwas solny"} <= differin
+    vitalipid = names(leaflet("vitalipid", tables))         # "…, sodu wodorotlenek 1 M i woda do wstrzykiwań"
+    assert {"glicerol", "woda do wstrzykiwań", "fosfolipidy jaja kurzego oczyszczone"} <= vitalipid
+    teenia = names(leaflet("teenia", tables))               # "skrobia żelowana, kukurydziana" to jedna substancja
+    assert "skrobia żelowana" in teenia and "kukurydziana" not in teenia
+    krem = names(leaflet("differin_krem", tables))          # "sodu wodorotlenek, roztwór 10%"
+    assert "roztwór 10%" not in krem
+
+
+def test_leaflet_without_list_or_section(tables):
+    assert NO_EXCIPIENT_LIST in leaflet("avenalax", tables).powody     # "Lek zawiera glicerol, kwas stearynowy…"
+    assert NO_LEAFLET_SECTION in parse_leaflet(PAD + "INFORMACJE NA OPAKOWANIU\n1. NAZWA PRODUKTU", tables).powody
+    r = parse_leaflet(PAD + "Co zawiera lek X\nSubstancją czynną jest jod.\nLek nie zawiera substancji pomocniczych.\n"
+                            "Jak wygląda lek X", tables)
+    assert r.status == "OK" and r.brak_substancji

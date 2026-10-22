@@ -30,3 +30,7 @@ tabletka
 tabletki
 kapsułka
 kapsułki
+otoczka tabletki powlekanej
+skład otoczki tabletki
+warstwa zewnętrzna
+warstwa wewnętrzna
