@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "admin/_resolve.html" import resolve_form, excipient_datalist %}
+{% block title %}Nieznane nazwy{% endblock %}
+{% block content %}
+<h1>Nieznane nazwy <span class="muted">({{ total }})</span></h1>
+<div class="card muted">
+  <p>Parser znalazł w dokumentach tekst, którego nie ma w słowniku. Dla każdej nazwy wybierz <b>jedną</b> z akcji.
+    Decyzja trafia do słowników, a wszystkie dokumenty w kolejce są od razu przetwarzane ponownie,
+    więc ta sama nazwa nie wróci w innych lekach.</p>
+  <p>Jeśli nie masz pewności, otwórz PDF i sprawdź punkt 6.1 (ChPL) albo punkt 6 (ulotka).
+    Nazwę możesz też zostawić na później, a lek po prostu poczeka w kolejce.</p>
+</div>
+{{ excipient_datalist(excipients) }}
+{% for name, n in names %}
+  <div class="card">
+    <h2 class="unknown-name">{{ name }} <span class="muted">· w {{ n }} {{ 'dokumencie' if n == 1 else 'dokumentach' }}</span></h2>
+    {% if context.get(name) %}
+      <ul class="where muted">
+      {% for place in context[name] %}
+        <li>{% for p in place.products %}<a href="{{ url_for('admin.product', product_id=p.id) }}">{{ p.name }} {{ p.power or '' }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
+          · <a href="{{ url_for('admin.document', doc_id=place.doc.id) }}">wynik parsera</a>
+          · <a href="{{ place.doc.source_url }}" rel="noopener">PDF</a>
+          {% if place.original and place.original|lower != name %}<br>tekst w dokumencie: „{{ place.original }}”{% endif %}</li>
+      {% endfor %}
+      </ul>
+    {% endif %}
+    {{ resolve_form(name, suggestions[name], excipients) }}
+  </div>
+{% else %}
+  <p>Brak nieznanych nazw.</p>
+{% endfor %}
+{% if pages > 1 %}
+  <p class="pager">Strona {{ page }} z {{ pages }} (od najczęstszych) ·
+    {% if page > 1 %}<a href="{{ url_for('admin.unknown', strona=page - 1) }}">← poprzednia</a>{% endif %}
+    {% if page < pages %}<a href="{{ url_for('admin.unknown', strona=page + 1) }}">następna →</a>{% endif %}</p>
+{% endif %}
+{% endblock %}

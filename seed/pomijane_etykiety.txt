@@ -1,0 +1,36 @@
+# Etykiety części leku pomijane przez parser (jedna na linię, wielkość liter bez znaczenia).
+# W aplikacji: tabela edytowana przez admina w panelu.
+rdzeń
+rdzeń tabletki
+skład rdzenia
+otoczka
+otoczka tabletki
+otoczka cukrowa
+otoczka kapsułki
+skład otoczki
+powłoczka
+powłoka tabletki
+skład powłoki
+tusz
+tusz do nadruku
+skład tuszu
+skład tuszu do nadruku
+nadruk
+wypełnienie kapsułki
+zawartość kapsułki
+osłonka kapsułki
+skład osłonki kapsułki
+korpus
+korpus kapsułki
+wieczko
+wieczko kapsułki
+zawartość roztworu
+granulat
+tabletka
+tabletki
+kapsułka
+kapsułki
+otoczka tabletki powlekanej
+skład otoczki tabletki
+warstwa zewnętrzna
+warstwa wewnętrzna

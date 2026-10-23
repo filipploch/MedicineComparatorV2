@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Porównanie: {{ p.name }} {{ p.power }}{% endblock %}
+{% block content %}
+<h1>Substancje pomocnicze: {{ p.common_name }} {{ p.power }}</h1>
+<form class="search" method="get">
+  <select name="forma" aria-label="Postać">
+    <option value="">wszystkie postacie ({{ forms|length }})</option>
+    {% for f in forms %}<option value="{{ f }}" {% if f == form %}selected{% endif %}>{{ f }}</option>{% endfor %}
+  </select>
+  <label><input type="checkbox" name="roznice" value="1" {% if only_diff %}checked{% endif %}> tylko różnice</label>
+  <button class="secondary">Pokaż</button>
+</form>
+<p class="muted">Podświetlone wiersze to substancje, które występują tylko w części leków.
+  Leki ze składem w trakcie weryfikacji nie są brane pod uwagę przy wyznaczaniu różnic.</p>
+<div class="scroll">
+<table class="compare">
+  <thead>
+    <tr><th class="sticky">Substancja</th>
+      {% for g in products %}
+        <th class="product"><a href="{{ url_for('public.product', product_id=g.id) }}">{{ g.name }}</a><br>
+          <span class="muted">{{ g.form }}</span></th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for row in rows if row.differs or not only_diff %}
+    <tr class="{{ 'differs' if row.differs }}">
+      <td class="sticky">{{ row.name }}</td>
+      {% for g in products %}
+        {% if g.status != 'ok' %}<td class="mark muted" title="skład w trakcie weryfikacji">?</td>
+        {% elif row.name in row.has[g.id] %}<td class="mark yes" aria-label="zawiera">✓</td>
+        {% else %}<td class="mark no" aria-label="nie zawiera">–</td>{% endif %}
+      {% endfor %}
+    </tr>
+  {% else %}
+    <tr><td colspan="{{ products|length + 1 }}">Brak danych do porównania.</td></tr>
+  {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr><td class="sticky muted">Źródło składu</td>
+      {% for g in products %}
+        <td class="mark muted">{% if g.source_url %}<a href="{{ g.source_url }}" rel="noopener"
+          title="{{ 'Ulotka dla pacjenta' if g.source == 'ULOTKA' else 'Charakterystyka Produktu Leczniczego' }}">
+          {{- {'EMA': 'EMA', 'ULOTKA': 'ulotka'}.get(g.source, 'RPL') }}</a>{% if g.manual %}, ręcznie{% endif %}
+          {%- else %}—{% endif %}</td>
+      {% endfor %}
+    </tr>
+  </tfoot>
+</table>
+</div>
+{% endblock %}

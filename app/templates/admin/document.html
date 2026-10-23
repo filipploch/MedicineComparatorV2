@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, status_badge %}
+{% from "admin/_resolve.html" import resolve_form, excipient_datalist %}
+{% block title %}ChPL {{ doc.file_name }}{% endblock %}
+{% block content %}
+<h1>{{ 'Ulotka' if doc.kind == 'ulotka' else 'ChPL' }} {{ doc.file_name or doc.sha256[:12] }}</h1>
+<p><a href="{{ doc.source_url }}" rel="noopener">Otwórz PDF</a> · pobrano {{ doc.fetched_at.strftime('%d.%m.%Y') }}
+  · {{ (doc.size or 0) // 1024 }} kB</p>
+{% for r in result.powody %}<span class="badge weryfikacja">{{ r|reason }}</span> {% endfor %}
+{% if result.status == 'OK' %}<span class="badge ok">bez zastrzeżeń</span>{% endif %}
+{% if result.blad %}<p class="muted">Szczegóły błędu odczytu: {{ result.blad }}. Otwórz PDF i wpisz skład ręcznie przy leku.</p>{% endif %}
+
+<h2>Leki korzystające z tego ChPL</h2>
+<ul>{% for p in doc.products %}
+  <li><a href="{{ url_for('admin.product', product_id=p.id) }}">{{ p.name }} {{ p.power }}</a> {{ status_badge(p) }}
+    {% if p.review_reason %}<span class="muted">· {{ p.review_reason }}</span>{% endif %}</li>
+{% endfor %}</ul>
+
+{% if result.nieznane %}
+  <h2>Nieznane nazwy</h2>
+  {{ excipient_datalist(excipients) }}
+  {% for name in result.nieznane %}
+    <div class="card"><p><strong>{{ name }}</strong></p>{{ resolve_form(name, suggestions[name], excipients) }}</div>
+  {% endfor %}
+{% endif %}
+
+{% if result.czesci %}
+<h2>Charakterystyki w dokumencie ({{ result.czesci|length }})</h2>
+<p class="muted">Lek dostaje skład z części, której punkt 8 zawiera numery EU jego opakowań (albo z części z jego mocą w nazwie).</p>
+{% for c in result.czesci %}
+  <div class="card">
+    <p><strong>{{ c.nazwa }}</strong>
+      {% for r in c.wynik.powody %}<span class="badge weryfikacja">{{ r|reason }}</span> {% endfor %}
+      {% if c.wynik.status == 'OK' %}<span class="badge ok">bez zastrzeżeń</span>{% endif %}</p>
+    <p class="muted">Numery EU: {{ c.eu|join(', ') or 'brak' }}</p>
+    <p>{{ c.wynik.substancje|map(attribute='nazwa')|join(', ') }}</p>
+  </div>
+{% endfor %}
+{% endif %}
+
+<h2>Wynik parsera</h2>
+{% if result.brak_substancji %}<p>ChPL deklaruje brak substancji pomocniczych.</p>{% endif %}
+{% if result.dawki_z_naglowkow %}<p class="muted">Moce z nagłówków: {{ result.dawki_z_naglowkow|join(', ') }}</p>{% endif %}
+<table>
+  <thead><tr><th>Substancja</th><th>Tekst w ChPL</th><th>Numer E</th><th>Tylko dla mocy</th></tr></thead>
+  <tbody>
+  {% for e in result.substancje %}
+    <tr><td>{{ e.nazwa }}{% if not e.znana %} <span class="badge weryfikacja">spoza słownika</span>{% endif %}</td>
+      <td class="muted">{{ e.oryginal }}</td><td>{{ e.e or '' }}</td><td>{{ (e.dawki or [])|join(', ') }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Punkt 6.1 (tekst z PDF)</h2>
+{% if doc.raw_section %}<pre class="raw">{{ doc.raw_section }}</pre>
+{% else %}<p class="notice">Brak tekstu: wpisz skład ręcznie przy każdym leku, korzystając z PDF.</p>{% endif %}
+<form method="post" action="{{ url_for('admin.document_reparse', doc_id=doc.id) }}">{{ csrf() }}
+  <button class="secondary">Przetwórz ponownie</button></form>
+{% endblock %}

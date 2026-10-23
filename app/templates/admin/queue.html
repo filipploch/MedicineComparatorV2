@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Kolejka weryfikacji{% endblock %}
+{% block content %}
+<h1>Kolejka weryfikacji <span class="muted">({{ entries|length }})</span></h1>
+{% for e in entries %}
+  <div class="card">
+    {% if e.doc %}
+      <p><strong><a href="{{ url_for('admin.document', doc_id=e.doc.id) }}">ChPL {{ e.doc.file_name or e.doc.sha256[:12] }}</a></strong>
+        · <a href="{{ e.doc.source_url }}" rel="noopener">PDF</a></p>
+      {% for r in (e.doc.parse_result or {}).get('powody', []) %}<span class="badge weryfikacja">{{ r|reason }}</span> {% endfor %}
+      {% if e.unknown %}<p class="muted">Nieznane: {{ e.unknown|join(', ') }}</p>{% endif %}
+    {% else %}
+      <p><strong>Brak ChPL</strong></p>
+    {% endif %}
+    <ul>
+      {% for p in e.products %}
+        <li><a href="{{ url_for('admin.product', product_id=p.id) }}">{{ p.name }} {{ p.power }}</a>
+          <span class="muted">· {{ p.review_reason }}</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+{% else %}
+  <p>Kolejka jest pusta.</p>
+{% endfor %}
+{% endblock %}

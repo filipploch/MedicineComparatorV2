@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf, status_badge %}
+{% block title %}Skład: {{ p.name }}{% endblock %}
+{% block content %}
+<h1>{{ p.name }} <span class="muted">{{ p.power }}</span> {{ status_badge(p) }}</h1>
+<p>{{ p.form }} · {{ p.holder }} · <a href="{{ url_for('public.product', product_id=p.id) }}">strona publiczna</a>
+  {% if p.chpl %} · <a href="{{ url_for('admin.document', doc_id=p.chpl.id) }}">wynik parsera</a>
+  · <a href="{{ p.chpl.source_url }}" rel="noopener">PDF</a>{% endif %}</p>
+{% if p.review_reason %}<p class="notice">{{ p.review_reason }}</p>{% endif %}
+
+<h2>Skład wpisany ręcznie</h2>
+<form method="post">
+  {{ csrf() }}
+  <p class="muted">Jedna substancja w linii. Nazwy są dopasowywane do słownika (synonimy i numery E też działają).
+    Zapisany skład nie jest nadpisywany przez import; gdy ChPL się zmieni, lek wróci do kolejki.</p>
+  <textarea name="excipients">{{ text }}</textarea>
+  <p><label><input type="checkbox" name="create_unknown" value="1"> dodaj nazwy spoza słownika jako nowe substancje</label></p>
+  <button>Zapisz skład</button>
+</form>
+{% if p.manual %}
+<form method="post" style="margin-top: 1rem">{{ csrf() }}<input type="hidden" name="action" value="auto">
+  <button class="secondary">Wróć do składu z ChPL</button></form>
+{% endif %}
+{% endblock %}
