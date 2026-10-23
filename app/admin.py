@@ -7,7 +7,8 @@ from flask_login import login_required, login_user, logout_user
 
 from . import db
 from .chpl_parser import REASON_LABELS, Result, norm_key
-from .importer import apply_composition, excipient_by_name, reparse_documents, tables_from_db
+from .importer import (apply_composition, excipient_by_name, merge_excipients, reparse_documents,
+                       tables_from_db)
 from .models import (OK, REVIEW, ChplDocument, ENumber, Excipient, IgnoredLabel, ImportRun, Premix,
                      Product, Synonym, User)
 
@@ -221,11 +222,29 @@ def product(product_id: int):
 @bp.route("/slowniki")
 @login_required
 def dictionaries():
-    return render_template("admin/dictionaries.html",
+    from .models import product_excipient
+    usage = dict(db.session.query(product_excipient.c.excipient_id, db.func.count())
+                 .group_by(product_excipient.c.excipient_id).all())
+    return render_template("admin/dictionaries.html", usage=usage,
                            excipients=Excipient.query.order_by(Excipient.name).all(),
                            labels=IgnoredLabel.query.order_by(IgnoredLabel.text).all(),
                            premixes=Premix.query.order_by(Premix.name).all(),
                            e_numbers=ENumber.query.order_by(ENumber.code).all())
+
+
+@bp.route("/slowniki/scal", methods=["POST"])
+@login_required
+def dictionary_merge():
+    """Substancja dodana jako nowa okazała się synonimem istniejącej."""
+    source = db.session.get(Excipient, int(request.form.get("source_id", 0))) or abort(404)
+    target = Excipient.query.filter_by(name=request.form.get("target", "").strip()).first()
+    if target is None or target.id == source.id:
+        flash("Wybierz z listy inną, istniejącą substancję.", "error")
+        return redirect(url_for(".dictionaries") + f"#sub-{source.id}")
+    name = source.name
+    changed = merge_excipients(source, target)
+    flash(f"„{name}” scalono z „{target.name}” i zapisano jako jej synonim. Zmienione leki: {changed}.")
+    return redirect(url_for(".dictionaries") + f"#sub-{target.id}")
 
 
 @bp.route("/slowniki/usun", methods=["POST"])

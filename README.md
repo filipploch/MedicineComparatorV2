@@ -30,7 +30,7 @@ i punktu 6.1 Charakterystyk Produktów Leczniczych (ChPL).
    (`app/power.py`: „0,4 g” = „400 mg”, „120 mg/5 ml” = „24 mg/ml”). Postać jest filtrem w porównaniu.
 4. **Panel redaktora** (`/admin`) pokazuje kolejkę leków do weryfikacji z linkiem do PDF, listę nieznanych nazw
    (jedna decyzja, np. „synonim”, „etykieta do pomijania” albo „mieszanka”, od razu przetwarza ponownie wszystkie
-   dokumenty w kolejce), słowniki, dziennik importów i ręczną edycję składu. Skład wpisany ręcznie nie jest
+   dokumenty w kolejce), słowniki (z możliwością scalenia substancji dodanej omyłkowo jako nowa z istniejącą), dziennik importów i ręczną edycję składu. Skład wpisany ręcznie nie jest
    nadpisywany przez import; gdy ChPL się zmieni, lek wraca do kolejki.
 
 ## Wyszukiwanie

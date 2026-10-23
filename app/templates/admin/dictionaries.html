@@ -9,16 +9,26 @@
 {{ excipient_datalist(excipients|map(attribute='name')) }}
 
 <h2>Substancje i synonimy ({{ excipients|length }})</h2>
+<p class="muted">Jeśli substancja została dodana jako nowa, a to inna nazwa substancji już obecnej w słowniku,
+  użyj „scal z…”: jej leki, synonimy i numery E przejdą na wybraną substancję, a jej nazwa zostanie synonimem.</p>
 <table>
-  <thead><tr><th>Substancja</th><th>Synonimy</th></tr></thead>
+  <thead><tr><th>Substancja</th><th>Leki</th><th>Synonimy</th><th></th></tr></thead>
   <tbody>
   {% for e in excipients %}
-    <tr><td>{{ e.name }}</td><td>
+    <tr id="sub-{{ e.id }}"><td>{{ e.name }}</td><td class="muted">{{ usage.get(e.id, 0) }}</td><td>
       {% for s in e.synonyms %}
         <form class="inline" method="post" action="{{ url_for('admin.dictionary_delete') }}">{{ csrf() }}
           <input type="hidden" name="kind" value="synonym"><input type="hidden" name="id" value="{{ s.id }}">
           {{ s.text }} <button class="link" title="usuń synonim">×</button></form>{% if not loop.last %}, {% endif %}
       {% endfor %}
+    </td><td>
+      <details><summary class="muted">scal z…</summary>
+        <form method="post" action="{{ url_for('admin.dictionary_merge') }}" class="resolve">{{ csrf() }}
+          <input type="hidden" name="source_id" value="{{ e.id }}">
+          <input type="text" name="target" list="excipients" placeholder="substancja docelowa" required>
+          <button class="secondary">Scal</button>
+        </form>
+      </details>
     </td></tr>
   {% endfor %}
   </tbody>

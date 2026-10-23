@@ -317,14 +317,17 @@ def check_chpl(product: Product, client: Client, tables: Tables, stats: dict) ->
     stats["chpl_zmienione" if changed else ("chpl_nowe" if old_doc_id is None else "chpl_bez_zmian")] += 1
 
 
-def reparse_documents(only_review: bool = True) -> int:
-    """Parsuje ponownie zapisane punkty 6.1 (np. po uzupełnieniu słowników przez redaktora)."""
+def reparse_documents(only_review: bool = True, mentioning: str | None = None) -> int:
+    """Parsuje ponownie zapisane punkty 6.1 (np. po uzupełnieniu słowników przez redaktora).
+    mentioning: tylko dokumenty, których wynik zawiera tę nazwę substancji (szybciej po scaleniu)."""
     tables = tables_from_db()
     query = ChplDocument.query.filter(ChplDocument.raw_section.isnot(None))
     if only_review:
         query = query.filter(ChplDocument.parse_status != "OK")
     count = 0
     for doc in query.all():
+        if mentioning is not None and mentioning not in json.dumps(doc.parse_result or {}, ensure_ascii=False):
+            continue
         result = reparse(doc.parse_result, doc.raw_section, tables)
         doc.parse_status, doc.parse_result = result.status, result.to_dict()
         for product in doc.products:
@@ -332,6 +335,38 @@ def reparse_documents(only_review: bool = True) -> int:
         count += 1
     db.session.commit()
     return count
+
+
+def merge_excipients(source: Excipient, target: Excipient) -> int:
+    """Scala substancję dodaną omyłkowo jako nową z istniejącą: synonimy, numery E, leki i mieszanki
+    przechodzą na docelową, a nazwa scalanej zostaje jej synonimem. Zwraca liczbę zmienionych leków."""
+    from .chpl_parser import norm_key
+    if source.id == target.id:
+        raise ValueError("nie można scalić substancji z nią samą")
+    old_name = source.name
+    for syn in list(source.synonyms):
+        syn.excipient = target
+    key = norm_key(old_name)
+    if key != norm_key(target.name) and not Synonym.query.filter_by(text=key).first():
+        db.session.add(Synonym(text=key, excipient=target))
+    for e in ENumber.query.filter_by(excipient_id=source.id):
+        e.excipient = target
+    changed = 0
+    for product in Product.query.filter(Product.excipients.any(Excipient.id == source.id)):
+        items = [e for e in product.excipients if e.id != source.id]
+        if target not in items:
+            items.append(target)
+        product.excipients = items                     # także skład wpisany ręcznie
+        changed += 1
+    for premix in Premix.query.all():
+        comps = [target.name if norm_key(c) == key else c for c in premix.components]
+        if comps != premix.components:
+            premix.components = comps
+    db.session.flush()
+    db.session.delete(source)
+    db.session.commit()
+    reparse_documents(only_review=False, mentioning=old_name)   # wyniki parsera z nową nazwą
+    return changed
 
 
 # --- Europejska Agencja Leków ------------------------------------------------------------

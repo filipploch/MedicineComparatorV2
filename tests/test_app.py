@@ -8,7 +8,7 @@ import pytest
 
 from app import db, importer
 from app.chpl_parser import parse_leaflet, parse_text
-from app.models import NO_CHPL, OK, REVIEW, ImportRun, Product, User
+from app.models import NO_CHPL, OK, REVIEW, Excipient, ImportRun, Product, Synonym, User
 
 from .conftest import FIXTURES
 
@@ -447,3 +447,40 @@ def test_unknown_names_page_shows_where_and_clear_actions(rpl, client):
     for action in ("Zapisz jako synonim", "Dodaj substancję", "Pomijaj ten tekst", "Zapisz mieszankę"):
         assert action in page
     assert "Podpowiedź: to może być <strong>guma arabska</strong>" in page
+
+
+def test_merge_substance_added_by_mistake(rpl, client):
+    importer.run_import()
+    login(client)
+    wrong = "guma arabska suszona rozpyłowo"                      # omyłkowo jako nowa substancja
+    client.post("/admin/nieznane/rozwiaz", data={"name": wrong, "action": "substance", "canonical": wrong})
+    client.post("/admin/nieznane/rozwiaz", data={"name": "tusz opacode s-1-15094", "action": "premix", "components": ""})
+    assert status(NUROFEN)[0] == OK and wrong in status(NUROFEN)[1]
+
+    source = Excipient.query.filter_by(name=wrong).one()
+    page = client.get("/admin/slowniki").get_data(as_text=True)
+    assert f'id="sub-{source.id}"' in page and "scal z…" in page
+    r = client.post("/admin/slowniki/scal", data={"source_id": source.id, "target": "guma arabska"},
+                    follow_redirects=True)
+    assert "scalono" in r.get_data(as_text=True)
+    st, names = status(NUROFEN)
+    assert st == OK and "guma arabska" in names and wrong not in names
+    assert Excipient.query.filter_by(name=wrong).first() is None
+    assert Synonym.query.filter_by(text=wrong).one().excipient.name == "guma arabska"
+    doc_names = {e["nazwa"] for e in prod(NUROFEN).chpl.parse_result["substancje"]}
+    assert "guma arabska" in doc_names and wrong not in doc_names  # wynik parsera też z nową nazwą
+    # scalenie z samą sobą jest odrzucane
+    ga = Excipient.query.filter_by(name="guma arabska").one()
+    r = client.post("/admin/slowniki/scal", data={"source_id": ga.id, "target": "guma arabska"}, follow_redirects=True)
+    assert "Wybierz z listy inną" in r.get_data(as_text=True)
+
+
+def test_merge_keeps_manual_composition(rpl, client):
+    importer.run_import()
+    login(client)
+    client.post(f"/admin/lek/{prod(NUROFEN).id}", data={"excipients": "Talk\nsubstancja testowa",
+                                                        "create_unknown": "1"})
+    assert status(NUROFEN) == (OK, {"talk", "substancja testowa"})
+    src = Excipient.query.filter_by(name="substancja testowa").one()
+    client.post("/admin/slowniki/scal", data={"source_id": src.id, "target": "sacharoza"})
+    assert status(NUROFEN) == (OK, {"talk", "sacharoza"}) and prod(NUROFEN).manual
