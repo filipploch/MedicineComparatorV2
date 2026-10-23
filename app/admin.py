@@ -48,12 +48,40 @@ def suggest(name: str, existing: list[str]) -> str:
 
 
 # --- pulpit, kolejka, dziennik -------------------------------------------------------
+UNKNOWN_REASONS = {"NIEZNANA_SUBSTANCJA", "NIEZNANA_ETYKIETA", "NIEZNANY_NUMER_E"}
+
+
+def _review_docs():
+    """Dokumenty w weryfikacji z nieznanymi nazwami (bez błędów odczytu PDF, które są w kolejce)."""
+    for doc in ChplDocument.query.filter(ChplDocument.parse_status != "OK"):
+        result = doc.parse_result or {}
+        if UNKNOWN_REASONS & set(result.get("powody", [])):
+            yield doc, result
+
+
 def unknown_names() -> Counter:
     """Nieznane nazwy ze wszystkich dokumentów w weryfikacji: nazwa -> liczba dokumentów."""
     counter: Counter = Counter()
-    for doc in ChplDocument.query.filter(ChplDocument.parse_status != "OK"):
-        counter.update(set((doc.parse_result or {}).get("nieznane", [])))
+    for _doc, result in _review_docs():
+        counter.update(set(result.get("nieznane", [])))
     return counter
+
+
+def unknown_context(limit: int = 3) -> dict[str, list[dict]]:
+    """Gdzie występuje każda nieznana nazwa: dokument, leki i oryginalny tekst z dokumentu."""
+    context: dict[str, list[dict]] = {}
+    for doc, result in _review_docs():
+        originals = {}
+        for res in [result] + [c.get("wynik", {}) for c in result.get("czesci", [])]:
+            for ex in res.get("substancje", []):
+                if not ex.get("znana", True):
+                    originals[ex["nazwa"]] = ex.get("oryginal", "")
+        for name in set(result.get("nieznane", [])):
+            places = context.setdefault(name, [])
+            if len(places) < limit:
+                places.append({"doc": doc, "original": originals.get(name, ""),
+                               "products": [p for p in doc.products if p.active][:3]})
+    return context
 
 
 @bp.route("/")
@@ -89,7 +117,8 @@ def unknown():
     names = unknown_names().most_common()
     all_names = [e.name for e in Excipient.query.order_by(Excipient.name)]
     suggestions = {n: suggest(n, all_names) for n, _ in names}
-    return render_template("admin/unknown.html", names=names, excipients=all_names, suggestions=suggestions)
+    return render_template("admin/unknown.html", names=names, excipients=all_names, suggestions=suggestions,
+                           context=unknown_context())
 
 
 @bp.route("/nieznane/rozwiaz", methods=["POST"])

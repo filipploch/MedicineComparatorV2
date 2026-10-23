@@ -1,22 +1,45 @@
 {% from "_macros.html" import csrf %}
-{# Formularz rozwiązania nieznanej nazwy; zmienne: name, suggestion, excipients #}
+{# Decyzja redaktora dla nieznanej nazwy: cztery osobne akcje, każda z jednym polem. #}
 {% macro resolve_form(name, suggestion, excipients) %}
-<form method="post" action="{{ url_for('admin.resolve') }}" class="resolve">
-  {{ csrf() }}
-  <input type="hidden" name="name" value="{{ name }}">
-  <select name="action" aria-label="Działanie">
-    <option value="synonym" {% if suggestion %}selected{% endif %}>synonim substancji →</option>
-    <option value="substance" {% if not suggestion %}selected{% endif %}>nowa substancja o nazwie →</option>
-    <option value="label" {% if name.endswith(':') %}selected{% endif %}>etykieta do pomijania</option>
-    <option value="premix">mieszanka o składzie →</option>
-  </select>
-  <input type="text" name="target" list="excipients" value="{{ suggestion }}" placeholder="substancja (dla synonimu)">
-  <input type="text" name="canonical" value="{{ name.rstrip(':') }}" placeholder="nazwa (dla nowej)">
-  <details><summary>składniki mieszanki</summary>
-    <textarea name="components" placeholder="jeden składnik w linii; puste = pomiń mieszankę"></textarea>
+{% set is_label = name.endswith(':') %}
+<div class="choices">
+  {% if suggestion %}<p class="hint-box">Podpowiedź: to może być <strong>{{ suggestion }}</strong>. Sprawdź i zapisz jako synonim.</p>
+  {% elif is_label %}<p class="hint-box">Podpowiedź: nazwa kończy się dwukropkiem, więc to prawdopodobnie nagłówek części leku.</p>{% endif %}
+
+  <form method="post" action="{{ url_for('admin.resolve') }}" class="choice">
+    {{ csrf() }}<input type="hidden" name="name" value="{{ name }}"><input type="hidden" name="action" value="synonym">
+    <label><b>Inna nazwa substancji, która jest już w słowniku</b>
+      <span class="muted">np. „tlenek żelaza czerwony” = „żelaza tlenek czerwony”</span>
+      <input type="text" name="target" list="excipients" value="{{ suggestion }}" placeholder="zacznij pisać nazwę ze słownika" required></label>
+    <button>Zapisz jako synonim</button>
+  </form>
+
+  <form method="post" action="{{ url_for('admin.resolve') }}" class="choice">
+    {{ csrf() }}<input type="hidden" name="name" value="{{ name }}"><input type="hidden" name="action" value="substance">
+    <label><b>Nowa substancja</b>
+      <span class="muted">dodaj do słownika; możesz poprawić nazwę, a oryginalny zapis zostanie jej synonimem</span>
+      <input type="text" name="canonical" value="{{ name.rstrip(':') }}" required></label>
+    <button>Dodaj substancję</button>
+  </form>
+
+  <form method="post" action="{{ url_for('admin.resolve') }}" class="choice">
+    {{ csrf() }}<input type="hidden" name="name" value="{{ name }}"><input type="hidden" name="action" value="label">
+    <p><b>To nie substancja, tylko nagłówek części leku</b>
+      <span class="muted">np. „Rdzeń tabletki”, „Otoczka:”, „Skład tuszu:”; parser będzie go pomijał</span></p>
+    <button class="secondary">Pomijaj ten tekst</button>
+  </form>
+
+  <details class="choice">
+    <summary><b>Mieszanka o nazwie handlowej</b> <span class="muted">np. „Opadry II 85F18422”, „tusz Opacode …”</span></summary>
+    <form method="post" action="{{ url_for('admin.resolve') }}">
+      {{ csrf() }}<input type="hidden" name="name" value="{{ name }}"><input type="hidden" name="action" value="premix">
+      <label class="muted">Składniki mieszanki, jeden w linii. Zostaw puste, jeśli dokument wymienia jej skład osobno
+        i samą nazwę mieszanki trzeba tylko pominąć.
+        <textarea name="components" rows="4"></textarea></label>
+      <button class="secondary">Zapisz mieszankę</button>
+    </form>
   </details>
-  <button>Zapisz</button>
-</form>
+</div>
 {% endmacro %}
 
 {% macro excipient_datalist(excipients) %}

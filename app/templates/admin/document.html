@@ -8,6 +8,7 @@
   · {{ (doc.size or 0) // 1024 }} kB</p>
 {% for r in result.powody %}<span class="badge weryfikacja">{{ r|reason }}</span> {% endfor %}
 {% if result.status == 'OK' %}<span class="badge ok">bez zastrzeżeń</span>{% endif %}
+{% if result.blad %}<p class="muted">Szczegóły błędu odczytu: {{ result.blad }}. Otwórz PDF i wpisz skład ręcznie przy leku.</p>{% endif %}
 
 <h2>Leki korzystające z tego ChPL</h2>
 <ul>{% for p in doc.products %}

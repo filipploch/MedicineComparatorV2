@@ -72,3 +72,15 @@ form.finder .combo input { width: 100%; font-size: 1.05rem; }
 .scanner[hidden] { display: none; }
 .scanner-box { background: var(--surface); border-radius: 10px; padding: 1rem; width: min(32rem, 100%); text-align: center; }
 .scanner-box video { width: 100%; border-radius: 6px; background: #000; aspect-ratio: 4 / 3; object-fit: cover; }
+
+/* panel: decyzje dla nieznanych nazw */
+h2.unknown-name { margin-top: 0; }
+ul.where { padding-left: 1.1rem; margin: .25rem 0 .75rem; font-size: .9rem; }
+.choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .6rem; }
+.choices .hint-box { grid-column: 1 / -1; margin: 0; padding: .4rem .7rem; background: var(--accent-soft); border-radius: 6px; }
+.choice { border: 1px solid var(--line); border-radius: 6px; padding: .6rem .7rem; display: flex; flex-direction: column; gap: .4rem; }
+.choice label, .choice p { display: flex; flex-direction: column; gap: .25rem; margin: 0; }
+.choice .muted { font-size: .85rem; }
+.choice button { align-self: flex-start; }
+details.choice[open] { grid-column: 1 / -1; }
+details.choice textarea { min-height: 5rem; }

@@ -423,3 +423,27 @@ def test_client_retries_dropped_connection(monkeypatch):
         importer.requests.ConnectionError("stale brak sieci")))
     with pytest.raises(importer.requests.ConnectionError):
         c.get("https://example.invalid/plik.pdf")
+
+
+
+def test_pdf_read_error_is_not_an_unknown_name(app, client, tables):
+    from app.chpl_parser import PDF_ERROR, parse_pdf
+    r, _ = parse_pdf(b"to nie jest PDF", tables)
+    assert PDF_ERROR in r.powody and r.nieznane == [] and r.blad
+    from app.models import ChplDocument
+    db.session.add(ChplDocument(sha256="x" * 64, parse_status="WYMAGA_WERYFIKACJI",       # zapis ze starej wersji
+                                parse_result={"status": "WYMAGA_WERYFIKACJI", "powody": [PDF_ERROR],
+                                              "nieznane": ["PdfminerException"]}))
+    db.session.commit()
+    login(client)
+    assert "PdfminerException" not in client.get("/admin/nieznane").get_data(as_text=True)
+
+
+def test_unknown_names_page_shows_where_and_clear_actions(rpl, client):
+    importer.run_import()
+    login(client)
+    page = client.get("/admin/nieznane").get_data(as_text=True)
+    assert "guma arabska suszona rozpyłowo" in page and "Nurofen Forte" in page     # gdzie występuje
+    for action in ("Zapisz jako synonim", "Dodaj substancję", "Pomijaj ten tekst", "Zapisz mieszankę"):
+        assert action in page
+    assert "Podpowiedź: to może być <strong>guma arabska</strong>" in page

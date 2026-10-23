@@ -159,7 +159,8 @@ class Result:
     substancje: list[Excipient] = field(default_factory=list)
     brak_substancji: bool = False      # ChPL deklaruje "Nie zawiera"
     dawki_z_naglowkow: list[str] = field(default_factory=list)
-    nieznane: list[str] = field(default_factory=list)
+    nieznane: list[str] = field(default_factory=list)   # nazwy do decyzji redaktora (substancje, etykiety, numery E)
+    blad: str = ""                                       # techniczny opis błędu odczytu pliku
     eu: list[str] = field(default_factory=list)          # numery pozwoleń EU z punktu 8 (leki centralne)
     # Dokument z kilkoma charakterystykami (np. informacja o produkcie EMA dla kilku mocy):
     # [{"nazwa": linia z punktu 1, "eu": [...], "surowy_6_1": "...", "wynik": {...}}]
@@ -615,7 +616,7 @@ def parse_pdf(pdf: bytes | Path, tables: Tables, kind: str = "chpl") -> tuple[Re
     except Exception as exc:  # uszkodzony lub zaszyfrowany plik
         r = Result()
         r.flag(PDF_ERROR)
-        r.nieznane.append(exc.__class__.__name__)
+        r.blad = f"{exc.__class__.__name__}: {exc}"[:300]   # nie trafia na listę nieznanych nazw
         return r, ""
     return (parse_leaflet(text, tables) if kind == "ulotka" else parse_text(text, tables)), text
 
