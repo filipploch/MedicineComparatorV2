@@ -12,6 +12,7 @@ Wykrywanie zmian ChPL (rozwinięcie pomysłu ze starego repo, które porównywa�
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import hashlib
 import io
 import json
@@ -92,13 +93,24 @@ class Client:
             time.sleep(pause)
         self._last = time.monotonic()
 
+    RETRY_PAUSES = (5, 15)     # sekundy przed 2. i 3. próbą przy zerwanym połączeniu
+
+    def _retry(self, call):
+        for attempt in range(len(self.RETRY_PAUSES) + 1):
+            self._wait()
+            try:
+                return call()
+            except (requests.ConnectionError, requests.Timeout, requests.exceptions.ChunkedEncodingError) as exc:
+                if attempt == len(self.RETRY_PAUSES):
+                    raise
+                log.info("ponawiam po błędzie połączenia: %s", exc)
+                time.sleep(self.RETRY_PAUSES[attempt])
+
     def get(self, url: str, **kw) -> requests.Response:
-        self._wait()
-        return self.http.get(url, timeout=120, **kw)
+        return self._retry(lambda: self.http.get(url, timeout=120, **kw))
 
     def head(self, url: str) -> requests.Response:
-        self._wait()
-        return self.http.head(url, timeout=30, allow_redirects=True)
+        return self._retry(lambda: self.http.head(url, timeout=30, allow_redirects=True))
 
 
 RE_FILENAME = re.compile(r"filename\*?=(?:UTF-8'')?\"?([^\";]+)", re.I)
@@ -379,9 +391,12 @@ def sync_ema(client: Client, stats: dict) -> None:
 
 # --- przebieg importu ------------------------------------------------------------------
 def run_import(limit: int | None = None, with_chpl: bool = True, csv_path: Path | None = None,
-               progress: Callable[[str], None] = lambda msg: None) -> ImportRun:
-    """Rejestr z CSV (z sieci albo z pliku), potem ChPL od leków sprawdzanych najdawniej,
-    więc przerwany import kontynuuje przy następnym uruchomieniu."""
+               check_all: bool = False, progress: Callable[[str], None] = lambda msg: None) -> ImportRun:
+    """Rejestr z CSV (z sieci albo z pliku), potem dokumenty leków.
+
+    Wznawianie: każdy sprawdzony lek jest zapisywany od razu, a kolejne uruchomienie pomija leki sprawdzone
+    w ciągu ostatnich CHPL_RECHECK_DAYS dni (domyślnie 6), więc przerwany import kontynuuje od miejsca przerwania,
+    a cotygodniowy import i tak sprawdza wszystko. check_all=True sprawdza wszystkie leki bez względu na datę."""
     run = ImportRun(status="trwa", stats={})
     db.session.add(run)
     db.session.commit()
@@ -402,22 +417,45 @@ def run_import(limit: int | None = None, with_chpl: bool = True, csv_path: Path 
                 stats["ema_blad"] = str(exc)[:200]
                 db.session.rollback()
             tables = tables_from_db()
-            todo = (Product.query.filter(Product.active.is_(True),
+            query = Product.query.filter(Product.active.is_(True),
                                          or_(Product.chpl_url.isnot(None), Product.ema_url.isnot(None),
                                              Product.leaflet_url.isnot(None)),
                                          Product.id.in_(seen))
-                    .order_by(Product.chpl_checked_at.is_(None).desc(), Product.chpl_checked_at).all())
+            total = query.count()
+            if not check_all:
+                cutoff = now() - dt.timedelta(days=current_app.config["CHPL_RECHECK_DAYS"])
+                query = query.filter(or_(Product.chpl_checked_at.is_(None), Product.chpl_checked_at < cutoff))
+            todo = query.order_by(Product.chpl_checked_at.is_(None).desc(), Product.chpl_checked_at).all()
+            stats["chpl_pominiete_niedawno_sprawdzone"] = total - len(todo)
+            progress(f"Dokumenty do sprawdzenia: {len(todo)} z {total} "
+                     f"(pominięto {total - len(todo)} sprawdzonych w ciągu ostatnich "
+                     f"{current_app.config['CHPL_RECHECK_DAYS']} dni)")
             for n, product in enumerate(todo, 1):
+                pid = product.id
                 try:
                     check_chpl(product, client, tables, stats)
-                except requests.RequestException as exc:
+                    db.session.commit()                         # postęp zapisany po każdym leku
+                except requests.RequestException as exc:        # sieć: lek zostaje do sprawdzenia przy następnym razie
+                    db.session.rollback()
                     stats["chpl_bledy"] += 1
-                    log.warning("ChPL %s: %s", product.id, exc)
-                if n % 50 == 0:
+                    log.warning("ChPL %s: %s", pid, exc)
+                    progress(f"Błąd pobierania (lek {pid}), spróbuję przy następnym imporcie: {exc}")
+                except Exception as exc:                        # nietypowy plik nie zatrzymuje importu
+                    db.session.rollback()
+                    stats["chpl_bledy"] += 1
+                    log.exception("ChPL %s", pid)
+                    product = db.session.get(Product, pid)
+                    product.chpl_checked_at = now()
+                    if not product.manual:
+                        product.status, product.review_reason = REVIEW, f"błąd przetwarzania dokumentu: {exc}"[:300]
                     db.session.commit()
-                    progress(f"ChPL: {n}/{len(todo)}")
-            db.session.commit()
+                if n % 50 == 0:
+                    progress(f"Dokumenty: {n}/{len(todo)} w tym przebiegu")
         run.status = "ok"
+    except KeyboardInterrupt:                                   # Ctrl+C: zapisany postęp zostaje
+        db.session.rollback()
+        run = db.session.get(ImportRun, run.id)
+        run.status, run.error = "przerwany", "Przerwano ręcznie; kolejne uruchomienie kontynuuje od tego miejsca."
     except Exception:
         db.session.rollback()
         run = db.session.get(ImportRun, run.id)

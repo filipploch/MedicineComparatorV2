@@ -22,6 +22,8 @@ def create_app(config: dict | None = None) -> Flask:
         RPL_CSV_URL=os.environ.get(
             "RPL_CSV_URL", "https://rejestry.ezdrowie.gov.pl/api/rpl/medicinal-products/public-pl-report/get-csv"),
         RPL_DELAY_SECONDS=float(os.environ.get("RPL_DELAY_SECONDS", 1.0)),
+        # Leki sprawdzone w ciągu tylu dni są pomijane (wznawianie przerwanego importu, import co tydzień)
+        CHPL_RECHECK_DAYS=float(os.environ.get("CHPL_RECHECK_DAYS", 6)),
         # Europejska Agencja Leków: lista leków (JSON, aktualizowany 2 razy dziennie) i polska informacja o produkcie
         EMA_MEDICINES_URL=os.environ.get(
             "EMA_MEDICINES_URL",

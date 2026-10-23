@@ -145,16 +145,16 @@ def test_import_and_change_detection(rpl):
     assert {g.code for g in prod(MIG).gtins} == {"05909990657964", "05909990657971", "05909990657988"}
 
     downloads = rpl.downloads
-    run = importer.run_import()                 # nic się nie zmieniło: same zapytania HEAD
+    run = importer.run_import(check_all=True)                 # nic się nie zmieniło: same zapytania HEAD
     assert rpl.downloads == downloads and run.stats["chpl_bez_zmian"] == 4
 
     rpl.versions[MIG] = "v2"                    # nowa wersja ChPL MIG
     rpl.files[MIG] += "\nSacharoza"
-    importer.run_import()
+    importer.run_import(check_all=True)
     assert "sacharoza" in status(MIG)[1]
 
     rpl.registry = csv_with([MIG, NUROFEN, APROVEL])   # Ibuprom Max wycofany z rejestru
-    run = importer.run_import()
+    run = importer.run_import(check_all=True)
     assert run.stats["leki_wycofane"] == 1 and not prod(IBUPROM).active
 
 
@@ -174,11 +174,11 @@ def test_manual_composition_survives_import(rpl, client):
     client.post(f"/admin/lek/{nurofen}", data={"excipients": "Talk\nE 171"})
     assert status(NUROFEN) == (OK, {"talk", "tytanu dwutlenek"})
 
-    importer.run_import()                        # bez zmian w ChPL: skład ręczny zostaje
+    importer.run_import(check_all=True)                        # bez zmian w ChPL: skład ręczny zostaje
     assert status(NUROFEN) == (OK, {"talk", "tytanu dwutlenek"})
     rpl.versions[NUROFEN] = "v2"
     rpl.files[NUROFEN] += "\nTalk"
-    importer.run_import()                        # ChPL się zmienił: skład zostaje, ale wraca do kolejki
+    importer.run_import(check_all=True)                        # ChPL się zmienił: skład zostaje, ale wraca do kolejki
     assert status(NUROFEN) == (REVIEW, {"talk", "tytanu dwutlenek"})
 
 
@@ -326,3 +326,100 @@ def test_parallel_import_composition_from_leaflet(rpl, client):
     assert st == OK and "maltitol ciekły" in names and "aromat truskawkowy" not in names
     page = client.get(f"/lek/{prod(NUROFEN_IR).id}").get_data(as_text=True)
     assert "ulotka dla pacjenta" in page
+
+
+
+def counting_client(rpl, fail_on=None):
+    """Klient liczący zapytania; fail_on(url, liczba_pobrań) może rzucić wyjątek."""
+    calls = {"get": [], "head": []}
+    orig = rpl.client
+
+    def client(delay):
+        c = orig(delay)
+        g, h = c.get, c.head
+
+        def get(url, **kw):
+            if "get-csv" not in url and "medicines_json" not in url:
+                calls["get"].append(url)
+                if fail_on:
+                    fail_on(url, len(calls["get"]))
+            return g(url, **kw)
+
+        def head(url):
+            calls["head"].append(url)
+            return h(url)
+        c.get, c.head = get, head
+        return c
+    return client, calls
+
+
+def test_interrupted_import_resumes_where_it_stopped(rpl, monkeypatch):
+    def stop_on_third(url, n):
+        if n == 3:
+            raise KeyboardInterrupt
+    client, calls = counting_client(rpl, stop_on_third)
+    monkeypatch.setattr(importer, "Client", client)
+    run = importer.run_import()
+    assert run.status == "przerwany"
+    done = {p.id for p in Product.query.filter(Product.chpl_checked_at.isnot(None))}
+    assert len(done) == 2                                        # dwa leki zapisane przed przerwaniem
+
+    calls["get"].clear(); calls["head"].clear()
+    client2, calls2 = counting_client(rpl)
+    monkeypatch.setattr(importer, "Client", client2)
+    run = importer.run_import()
+    assert run.status == "ok" and run.stats["chpl_pominiete_niedawno_sprawdzone"] == 2
+    assert len(calls2["head"]) == 2 and len(calls2["get"]) == 2  # tylko dwa niesprawdzone dokumenty
+    assert Product.query.filter(Product.chpl_checked_at.is_(None), Product.status != NO_CHPL).count() == 0
+
+
+def test_one_broken_document_does_not_stop_import(rpl, monkeypatch):
+    real = importer.parse_pdf
+
+    def broken_for_mig(content, tables, kind="chpl"):
+        if content.decode("utf-8") == rpl.files[MIG]:
+            raise RuntimeError("uszkodzony plik")
+        return real(content, tables, kind)
+    monkeypatch.setattr(importer, "parse_pdf", broken_for_mig)
+    run = importer.run_import()
+    assert run.status == "ok" and run.stats["chpl_bledy"] == 1
+    assert status(IBUPROM)[0] == OK
+    assert status(MIG)[0] == REVIEW and "błąd przetwarzania" in prod(MIG).review_reason
+
+
+def test_network_error_leaves_product_for_next_run(rpl, monkeypatch):
+    def fail_mig(url, n):
+        if f"/{MIG}/" in url:
+            raise importer.requests.ConnectionError("zerwane połączenie")
+    client, _ = counting_client(rpl, fail_mig)
+    monkeypatch.setattr(importer, "Client", client)
+    run = importer.run_import()
+    assert run.status == "ok" and run.stats["chpl_bledy"] == 1
+    assert prod(MIG).chpl_checked_at is None                     # przy następnym imporcie pierwszy w kolejce
+    client2, calls2 = counting_client(rpl)
+    monkeypatch.setattr(importer, "Client", client2)
+    importer.run_import()
+    assert [u for u in calls2["get"]] and all(f"/{MIG}/" in u for u in calls2["get"])
+    assert status(MIG)[0] == OK
+
+
+def test_client_retries_dropped_connection(monkeypatch):
+    c = importer.Client(0)
+    monkeypatch.setattr(importer.Client, "RETRY_PAUSES", (0, 0))
+    attempts = []
+
+    class Resp:
+        status_code = 200
+
+    def flaky_get(url, timeout, **kw):
+        attempts.append(url)
+        if len(attempts) < 3:
+            raise importer.requests.exceptions.ChunkedEncodingError("IncompleteRead")
+        return Resp()
+    monkeypatch.setattr(c.http, "get", flaky_get)
+    assert c.get("https://example.invalid/plik.pdf").status_code == 200 and len(attempts) == 3
+    attempts.clear()
+    monkeypatch.setattr(c.http, "get", lambda url, timeout, **kw: (_ for _ in ()).throw(
+        importer.requests.ConnectionError("stale brak sieci")))
+    with pytest.raises(importer.requests.ConnectionError):
+        c.get("https://example.invalid/plik.pdf")

@@ -72,10 +72,13 @@ def register_cli(app: Flask) -> None:
     @click.option("--bez-chpl", is_flag=True, help="tylko rejestr, bez pobierania ChPL")
     @click.option("--csv", "csv_path", type=click.Path(exists=True, dir_okay=False, path_type=Path),
                   help="rejestr z pobranego wcześniej pliku CSV zamiast z sieci")
-    def import_data(limit, bez_chpl, csv_path):
-        """Pobiera rejestr (CSV) i ChPL. Przerwany import kontynuuje przy kolejnym uruchomieniu."""
+    @click.option("--wszystkie", is_flag=True,
+                  help="sprawdź dokumenty wszystkich leków, także sprawdzonych w ostatnich dniach")
+    def import_data(limit, bez_chpl, csv_path, wszystkie):
+        """Pobiera rejestr (CSV) i dokumenty. Przerwany import kontynuuje przy kolejnym uruchomieniu."""
         from .importer import run_import
-        run = run_import(limit=limit, with_chpl=not bez_chpl, csv_path=csv_path, progress=click.echo)
+        run = run_import(limit=limit, with_chpl=not bez_chpl, csv_path=csv_path, check_all=wszystkie,
+                         progress=click.echo)
         click.echo(f"Import {run.status}: {run.stats}")
         if run.error:
             click.echo(run.error, err=True)
