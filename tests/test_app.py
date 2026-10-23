@@ -536,3 +536,15 @@ def test_fresh_database_is_not_reported_as_old(tmp_path):
     fresh = create_app({"SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path / 'nowa.db'}", "TESTING": True})
     with fresh.app_context():
         assert needs_upgrade() is False
+
+
+
+def test_skip_decision_works_for_text_inside_list(rpl, client):
+    rpl.files[MIG] += "\nTalk, dopisek redakcyjny testowy, Sacharoza"
+    importer.run_import()
+    login(client)
+    page = client.get("/admin/nieznane").get_data(as_text=True)
+    assert 'class="unknown-name">dopisek redakcyjny testowy' in page
+    client.post("/admin/nieznane/rozwiaz", data={"name": "dopisek redakcyjny testowy", "action": "label"})
+    assert 'class="unknown-name">dopisek redakcyjny testowy' not in client.get("/admin/nieznane").get_data(as_text=True)
+    assert status(MIG)[0] == OK and "sacharoza" in status(MIG)[1]

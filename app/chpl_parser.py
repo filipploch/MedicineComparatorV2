@@ -64,6 +64,9 @@ RE_DOSE = re.compile(rf"{_D}(?:\s*\+\s*{_D})*", re.I)
 RE_SCOPE = re.compile(r"[\(\[]\s*(?:tylko\s+)?dla\s+([^()\[\]]*)[\)\]]", re.I)
 RE_E = re.compile(r"\(?\b[EΕε][ \t-]?(\d{3,4}[a-z]?)\b\)?", re.I)
 RE_NOTE = re.compile(r"\((?:do|w celu)\s+(?:ustalenia|korekty|regulacji|dostosowania)\s+(?:wartości\s+)?ph\)", re.I)
+# Odesłania w treści listy: "(patrz punkt 2)", ", patrz punkt 4.4", "(zob. pkt 2)"
+RE_REFERENCE = re.compile(r"\(?\s*(?:patrz|zob\.?|zobacz)\s+(?:też\s+|również\s+)?(?:punkt|pkt\.?)\s*\d+(?:\.\d+)*"
+                          r"[^,;()\n]*\)?", re.I)
 RE_CONTAINS = re.compile(r"^(?P<name>.*?)\s*\(?\s*(?:zawierając\w*|zawiera)\s+(?P<list>[^()]*)\)?\s*$", re.I)
 RE_INLINE_LABEL = re.compile(r"^(?P<label>[^,:()]{1,60}(?:\([^()]*\))?)\s*:\s*(?P<rest>.*)$")
 RE_NONE = re.compile(r"^(nie zawiera|brak|nie dotyczy)\b", re.I)
@@ -288,7 +291,9 @@ def _split_components(text: str) -> list[str]:
 
 
 def _resolve(piece: str, doses: list[str] | None, tables: Tables, result: Result, depth: int = 0) -> list[Excipient]:
-    piece = RE_NOTE.sub(" ", piece)
+    piece = RE_REFERENCE.sub(" ", RE_NOTE.sub(" ", piece))
+    if tables.is_label(RE_E.sub(" ", piece)):     # tekst oznaczony przez redaktora do pomijania, w dowolnym miejscu listy
+        return []
     premix = tables.premixes.get(norm_key(RE_E.sub(" ", piece)))
     if premix is not None and depth < 3:
         out: list[Excipient] = []

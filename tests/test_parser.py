@@ -204,3 +204,13 @@ def test_leaflet_without_list_or_section(tables):
     r = parse_leaflet(PAD + "Co zawiera lek X\nSubstancją czynną jest jod.\nLek nie zawiera substancji pomocniczych.\n"
                             "Jak wygląda lek X", tables)
     assert r.status == "OK" and r.brak_substancji
+
+
+
+def test_references_and_ignored_text_inside_list(tables):
+    from dataclasses import replace
+    r = parse_section("Laktoza jednowodna (patrz punkt 2), talk, patrz punkt 2.\nSacharoza (zob. pkt 4.4)", tables)
+    assert r.status == "OK" and names(r) == {"laktoza", "talk", "sacharoza"}
+    t = replace(tables, ignored=tables.ignored | {"przykładowy dopisek"})
+    r = parse_section("Talk, przykładowy dopisek, magnezu stearynian", t)       # pominięty także w środku listy
+    assert r.status == "OK" and names(r) == {"talk", "magnezu stearynian"}
