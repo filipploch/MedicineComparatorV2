@@ -502,3 +502,37 @@ def test_upgrade_adds_columns_to_old_database(app):
     assert not needs_upgrade() and upgrade_schema() == []        # drugi raz nic do zrobienia
     assert Product.query.count() == 17 and ChplDocument.query.count() == 0   # dane zostały
     assert prod(IBUPROM).manual is False                         # NOT NULL z wartością domyślną
+
+
+
+def test_decision_reprocesses_only_documents_with_that_name(rpl, client):
+    rpl.files[MIG] += "\nSkładnik testowy rzadki"          # drugi dokument w kolejce, z inną nieznaną nazwą
+    importer.run_import()
+    assert status(NUROFEN)[0] == REVIEW and status(MIG)[0] == REVIEW
+    login(client)
+    r = client.post("/admin/nieznane/rozwiaz", data={"name": "guma arabska suszona rozpyłowo", "action": "synonym",
+                                                     "target": "guma arabska"}, follow_redirects=True)
+    assert "Ponownie przetworzono dokumentów z tą nazwą: 1." in r.get_data(as_text=True)
+    assert status(MIG)[0] == REVIEW                                # dokument bez tej nazwy nietknięty
+
+
+def test_unknown_names_page_is_paginated(app, client):
+    from app.models import ChplDocument
+    for i in range(65):
+        db.session.add(ChplDocument(sha256=f"{i:064d}", parse_status="WYMAGA_WERYFIKACJI", raw_section="x",
+                                    parse_result={"status": "WYMAGA_WERYFIKACJI", "powody": ["NIEZNANA_SUBSTANCJA"],
+                                                  "nieznane": [f"rzadka {i:02d}"] + (["częsta"] if i < 10 else [])}))
+    db.session.commit()
+    login(client)
+    first = client.get("/admin/nieznane").get_data(as_text=True)
+    assert "(66)" in first and "Strona 1 z 3" in first and ">częsta <" in first.replace("\n", " ")
+    last = client.get("/admin/nieznane?strona=3").get_data(as_text=True)
+    assert "Strona 3 z 3" in last and "częsta" not in last
+
+
+def test_fresh_database_is_not_reported_as_old(tmp_path):
+    from app import create_app
+    from app.schema import needs_upgrade
+    fresh = create_app({"SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path / 'nowa.db'}", "TESTING": True})
+    with fresh.app_context():
+        assert needs_upgrade() is False

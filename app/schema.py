@@ -24,9 +24,13 @@ def missing_columns() -> list[tuple[sa.Table, sa.Column]]:
 
 
 def needs_upgrade() -> bool:
+    """Czy istniejąca baza aplikacji jest starsza niż kod (pusta, nowa baza się nie liczy)."""
     inspector = sa.inspect(db.engine)
     tables = set(inspector.get_table_names())
-    return bool(missing_columns()) or any(t.name not in tables for t in db.metadata.sorted_tables)
+    ours = {t.name for t in db.metadata.sorted_tables}
+    if not tables & ours:
+        return False
+    return bool(missing_columns()) or bool(ours - tables)
 
 
 def _column_sql(col: sa.Column) -> str:

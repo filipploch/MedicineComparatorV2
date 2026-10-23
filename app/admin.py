@@ -68,16 +68,19 @@ def unknown_names() -> Counter:
     return counter
 
 
-def unknown_context(limit: int = 3) -> dict[str, list[dict]]:
-    """Gdzie występuje każda nieznana nazwa: dokument, leki i oryginalny tekst z dokumentu."""
+def unknown_context(wanted: set[str], limit: int = 3) -> dict[str, list[dict]]:
+    """Gdzie występują wskazane nieznane nazwy: dokument, leki i oryginalny tekst z dokumentu."""
     context: dict[str, list[dict]] = {}
     for doc, result in _review_docs():
+        names = wanted & set(result.get("nieznane", []))
+        if not names:
+            continue
         originals = {}
         for res in [result] + [c.get("wynik", {}) for c in result.get("czesci", [])]:
             for ex in res.get("substancje", []):
                 if not ex.get("znana", True):
                     originals[ex["nazwa"]] = ex.get("oryginal", "")
-        for name in set(result.get("nieznane", [])):
+        for name in names:
             places = context.setdefault(name, [])
             if len(places) < limit:
                 places.append({"doc": doc, "original": originals.get(name, ""),
@@ -115,11 +118,17 @@ def queue():
 @bp.route("/nieznane")
 @login_required
 def unknown():
-    names = unknown_names().most_common()
+    all_unknown = unknown_names().most_common()                # od najczęstszych
+    per_page = 30
+    page = max(1, request.args.get("strona", 1, type=int))
+    pages = max(1, -(-len(all_unknown) // per_page))
+    page = min(page, pages)
+    names = all_unknown[(page - 1) * per_page: page * per_page]
     all_names = [e.name for e in Excipient.query.order_by(Excipient.name)]
-    suggestions = {n: suggest(n, all_names) for n, _ in names}
-    return render_template("admin/unknown.html", names=names, excipients=all_names, suggestions=suggestions,
-                           context=unknown_context())
+    suggestions = {n: suggest(n, all_names) for n, _ in names}   # podpowiedzi i kontekst tylko dla tej strony
+    return render_template("admin/unknown.html", names=names, total=len(all_unknown), page=page, pages=pages,
+                           excipients=all_names, suggestions=suggestions,
+                           context=unknown_context({n for n, _ in names}))
 
 
 @bp.route("/nieznane/rozwiaz", methods=["POST"])
@@ -159,8 +168,8 @@ def resolve():
     if is_label and action != "label":
         flash("To była etykieta z dwukropkiem; parser i tak ją pominie.", "error")
     db.session.commit()
-    n = reparse_documents(only_review=True)
-    flash(f"Ponownie przetworzono dokumentów: {n}.")
+    n = reparse_documents(only_review=True, unknown=raw)       # tylko dokumenty z tą nazwą
+    flash(f"Ponownie przetworzono dokumentów z tą nazwą: {n}.")
     return redirect(request.referrer or url_for(".unknown"))
 
 

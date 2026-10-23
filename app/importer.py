@@ -317,16 +317,20 @@ def check_chpl(product: Product, client: Client, tables: Tables, stats: dict) ->
     stats["chpl_zmienione" if changed else ("chpl_nowe" if old_doc_id is None else "chpl_bez_zmian")] += 1
 
 
-def reparse_documents(only_review: bool = True, mentioning: str | None = None) -> int:
+def reparse_documents(only_review: bool = True, mentioning: str | None = None, unknown: str | None = None) -> int:
     """Parsuje ponownie zapisane punkty 6.1 (np. po uzupełnieniu słowników przez redaktora).
-    mentioning: tylko dokumenty, których wynik zawiera tę nazwę substancji (szybciej po scaleniu)."""
+    mentioning: tylko dokumenty, których wynik zawiera tę nazwę substancji (po scaleniu substancji);
+    unknown: tylko dokumenty z tą nazwą na liście nieznanych (po decyzji redaktora w sprawie tej nazwy)."""
     tables = tables_from_db()
     query = ChplDocument.query.filter(ChplDocument.raw_section.isnot(None))
     if only_review:
         query = query.filter(ChplDocument.parse_status != "OK")
     count = 0
     for doc in query.all():
-        if mentioning is not None and mentioning not in json.dumps(doc.parse_result or {}, ensure_ascii=False):
+        result = doc.parse_result or {}
+        if unknown is not None and unknown not in result.get("nieznane", []):
+            continue
+        if mentioning is not None and mentioning not in json.dumps(result, ensure_ascii=False):
             continue
         result = reparse(doc.parse_result, doc.raw_section, tables)
         doc.parse_status, doc.parse_result = result.status, result.to_dict()

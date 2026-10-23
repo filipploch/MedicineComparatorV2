@@ -2,7 +2,7 @@
 {% from "admin/_resolve.html" import resolve_form, excipient_datalist %}
 {% block title %}Nieznane nazwy{% endblock %}
 {% block content %}
-<h1>Nieznane nazwy <span class="muted">({{ names|length }})</span></h1>
+<h1>Nieznane nazwy <span class="muted">({{ total }})</span></h1>
 <div class="card muted">
   <p>Parser znalazł w dokumentach tekst, którego nie ma w słowniku. Dla każdej nazwy wybierz <b>jedną</b> z akcji.
     Decyzja trafia do słowników, a wszystkie dokumenty w kolejce są od razu przetwarzane ponownie,
@@ -29,4 +29,9 @@
 {% else %}
   <p>Brak nieznanych nazw.</p>
 {% endfor %}
+{% if pages > 1 %}
+  <p class="pager">Strona {{ page }} z {{ pages }} (od najczęstszych) ·
+    {% if page > 1 %}<a href="{{ url_for('admin.unknown', strona=page - 1) }}">← poprzednia</a>{% endif %}
+    {% if page < pages %}<a href="{{ url_for('admin.unknown', strona=page + 1) }}">następna →</a>{% endif %}</p>
+{% endif %}
 {% endblock %}
