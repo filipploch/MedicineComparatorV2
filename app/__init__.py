@@ -53,4 +53,14 @@ def create_app(config: dict | None = None) -> Flask:
     app.register_blueprint(public_bp)
     app.register_blueprint(admin_bp, url_prefix="/admin")
     register_cli(app)
+
+    if not app.config.get("TESTING"):
+        from .schema import needs_upgrade
+        with app.app_context():
+            try:
+                if needs_upgrade():
+                    app.logger.warning("Baza pochodzi ze starszej wersji aplikacji. "
+                                       "Uruchom: flask --app wsgi upgrade-db (dane zostaną).")
+            except Exception:              # np. brak pliku bazy przed init-db
+                pass
     return app

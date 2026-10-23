@@ -52,9 +52,19 @@ def register_cli(app: Flask) -> None:
     @click.option("--seed", "seed_dir", type=click.Path(path_type=Path), default=BASE_DIR / "seed",
                   show_default=True, help="katalog z tabelami startowymi")
     def init_db(seed_dir: Path):
-        """Tworzy tabele i wczytuje słowniki startowe."""
-        db.create_all()
-        click.echo(f"Tabele gotowe. Dodano: {seed_dictionaries(seed_dir)}")
+        """Tworzy tabele (albo uzupełnia istniejącą bazę) i wczytuje słowniki startowe."""
+        from .schema import upgrade_schema
+        added = upgrade_schema()
+        if added:
+            click.echo("Uzupełniono bazę: " + ", ".join(added))
+        click.echo(f"Tabele gotowe. Dodano do słowników: {seed_dictionaries(seed_dir)}")
+
+    @app.cli.command("upgrade-db")
+    def upgrade_db():
+        """Dodaje do istniejącej bazy tabele i kolumny wprowadzone w nowszej wersji kodu (dane zostają)."""
+        from .schema import upgrade_schema
+        added = upgrade_schema()
+        click.echo("Uzupełniono bazę: " + ", ".join(added) if added else "Baza jest aktualna.")
 
     @app.cli.command("create-admin")
     @click.argument("username")

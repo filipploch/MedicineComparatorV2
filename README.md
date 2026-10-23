@@ -98,6 +98,7 @@ zapisz jako `Charakterystyka-19752-mig.pdf` i `Charakterystyka-9487-nurofen.pdf`
 | Komenda | Opis |
 |---|---|
 | `flask init-db` | tworzy tabele i wczytuje słowniki z `seed/` (nie nadpisuje istniejących wpisów) |
+| `flask upgrade-db` | dopisuje do istniejącej bazy tabele i kolumny z nowszej wersji kodu, dane zostają (uruchamiane też przez `init-db`; aplikacja ostrzega przy starcie, gdy baza jest nieaktualna) |
 | `flask create-admin LOGIN` | zakłada konto redaktora albo zmienia hasło |
 | `flask import-data [--limit N] [--bez-chpl] [--csv PLIK] [--wszystkie]` | import z RPL (rejestr z sieci albo z pliku CSV); pomija dokumenty sprawdzone w ostatnich `CHPL_RECHECK_DAYS` dniach (domyślnie 6), więc przerwany import kontynuuje, a `--wszystkie` sprawdza wszystko |
 | `flask reparse [--wszystkie]` | ponowne parsowanie zapisanych punktów 6.1 po zmianach w słownikach |

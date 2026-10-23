@@ -484,3 +484,21 @@ def test_merge_keeps_manual_composition(rpl, client):
     src = Excipient.query.filter_by(name="substancja testowa").one()
     client.post("/admin/slowniki/scal", data={"source_id": src.id, "target": "sacharoza"})
     assert status(NUROFEN) == (OK, {"talk", "sacharoza"}) and prod(NUROFEN).manual
+
+
+def test_upgrade_adds_columns_to_old_database(app):
+    from sqlalchemy import inspect, text
+    from app.models import ChplDocument
+    from app.schema import needs_upgrade, upgrade_schema
+    load_demo(app)
+    with db.engine.begin() as conn:                              # baza sprzed wersji z ulotkami i EMA
+        conn.execute(text('ALTER TABLE chpl_document DROP COLUMN kind'))
+        conn.execute(text('ALTER TABLE product DROP COLUMN ema_url'))
+        conn.execute(text('ALTER TABLE product DROP COLUMN manual'))
+    db.session.expire_all()
+    assert needs_upgrade()
+    added = upgrade_schema()
+    assert {"chpl_document.kind", "product.ema_url", "product.manual"} <= set(added)
+    assert not needs_upgrade() and upgrade_schema() == []        # drugi raz nic do zrobienia
+    assert Product.query.count() == 17 and ChplDocument.query.count() == 0   # dane zostały
+    assert prod(IBUPROM).manual is False                         # NOT NULL z wartością domyślną
